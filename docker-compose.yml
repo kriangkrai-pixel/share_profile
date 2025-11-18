@@ -1,0 +1,45 @@
+services:
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: profile_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: profile_db
+      MYSQL_USER: profile_user
+      MYSQL_PASSWORD: profile_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Next.js Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DATABASE_URL: mysql://profile_user:profile_password@db:3306/profile_db
+    container_name: profile_web
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=mysql://profile_user:profile_password@db:3306/profile_db
+      - NODE_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "
+        npx prisma migrate deploy &&
+        node server.js
+      "
+
+volumes:
+  mysql_data:

@@ -1,0 +1,151 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // บันทึก token และเวลาที่ login ไว้ใน localStorage
+        localStorage.setItem("adminToken", data.token);
+        localStorage.setItem("adminLoginTime", Date.now().toString());
+        router.push("/admin");
+      } else {
+        setError(data.error || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+      }
+    } catch (err) {
+      setError("เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Animated background decorations */}
+      <div className="absolute top-0 right-0 w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+      <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse delay-1000"></div>
+      
+      <div className="max-w-md w-full relative z-10">
+        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl p-8 md:p-10 border-2 border-white/50">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl shadow-lg mb-4 transform hover:rotate-12 transition-transform duration-300">
+              <span className="text-4xl">🔐</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+              Admin Login
+            </h1>
+            <p className="text-gray-600">เข้าสู่ระบบเพื่อจัดการเว็บไซต์ของคุณ</p>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-3 animate-fade-in">
+              <span className="text-xl flex-shrink-0">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Login Form */}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label htmlFor="username" className="block text-sm font-bold text-gray-700 mb-2">
+                ชื่อผู้ใช้ <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-xl">👤</span>
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  className="w-full rounded-xl border-2 border-gray-300 bg-white pl-12 pr-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all"
+                  placeholder="กรอกชื่อผู้ใช้"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-bold text-gray-700 mb-2">
+                รหัสผ่าน <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-xl">🔑</span>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full rounded-xl border-2 border-gray-300 bg-white pl-12 pr-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all"
+                  placeholder="กรอกรหัสผ่าน"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 disabled:transform-none disabled:hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-300 flex items-center justify-center gap-2 group"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>กำลังเข้าสู่ระบบ...</span>
+                </>
+              ) : (
+                <>
+                  <span>เข้าสู่ระบบ</span>
+                  <span className="text-xl group-hover:translate-x-1 transition-transform">→</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Security Note */}
+          <div className="mt-6 pt-6 border-t-2 border-gray-200">
+            <div className="flex items-center gap-2 text-xs text-gray-600 justify-center">
+              <span className="text-sm">🔒</span>
+              <span>การเชื่อมต่อของคุณได้รับการปกป้องอย่างปลอดภัย</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Back to Home Link */}
+        <div className="text-center mt-6">
+          <a
+            href="/"
+            className="inline-flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors font-medium"
+          >
+            <span>←</span>
+            <span>กลับไปหน้าแรก</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+

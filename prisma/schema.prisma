@@ -1,0 +1,154 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id          Int      @id @default(autoincrement())
+  name        String   @default("เกรียงไกร ภูทองก้าน")
+  email       String   @default("kik550123@gmail.com")
+  phone       String   @default("091-826-6369")
+  location    String   @default("Phuket, Thailand")
+  description String   @db.Text
+  bio         String   @db.Text
+  achievement String   @db.Text
+  heroImage   String?  @db.Text
+  contactImage String? @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  skills      Skill[]
+  education   Education[]
+  experiences Experience[]
+  portfolios  Portfolio[]
+}
+
+model Skill {
+  id        Int      @id @default(autoincrement())
+  name      String
+  profileId Int
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
+}
+
+model Education {
+  id        Int      @id @default(autoincrement())
+  type      String   // "university" or "highschool"
+  field     String
+  institution String
+  location  String?
+  year      String?
+  gpa       String?
+  profileId Int
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([profileId])
+}
+
+model Experience {
+  id          Int      @id @default(autoincrement())
+  title       String
+  company     String
+  location    String
+  period      String
+  description String?  @db.Text
+  profileId   Int
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model Portfolio {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String   @db.Text
+  image       String?  @db.Text // base64 หรือ URL
+  link        String?
+  profileId   Int
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([profileId])
+}
+
+model EditHistory {
+  id          Int      @id @default(autoincrement())
+  page        String   // หน้าที่แก้ไข เช่น "profile", "about", "portfolio", "experience"
+  section     String?  // section ที่แก้ไข เช่น "name", "bio", "skills"
+  action      String   // "create", "update", "delete"
+  oldValue    String?  @db.Text // ค่าเก่า
+  newValue    String?  @db.Text // ค่าใหม่
+  itemId      Int?     // ID ของ item ที่แก้ไข (ถ้ามี)
+  createdAt   DateTime @default(now())
+
+  @@index([page])
+  @@index([createdAt])
+}
+
+model Layout {
+  id        Int      @id @default(autoincrement())
+  name      String   @default("Default Layout")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  widgets   Widget[]
+}
+
+model Widget {
+  id        Int      @id @default(autoincrement())
+  type      String   // "hero", "about", "skills", "education", "experience", "portfolio", "contact", "image", "text"
+  title     String?
+  content   String?  @db.Text
+  imageUrl  String?  @db.Text
+  x         Int      @default(0)
+  y         Int      @default(0)
+  w         Int      @default(6)  // width in grid units
+  h         Int      @default(4)  // height in grid units
+  order     Int      @default(0)
+  isVisible Boolean  @default(true)
+  settings  String?  @db.Text // JSON string for custom settings
+  layoutId  Int
+  layout    Layout   @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([layoutId])
+  @@index([order])
+}
+
+model ContactMessage {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model SiteSettings {
+  id              Int      @id @default(autoincrement())
+  primaryColor    String   @default("#3b82f6") // สีหลัก
+  secondaryColor  String   @default("#8b5cf6") // สีรอง
+  accentColor     String   @default("#10b981") // สีเน้น
+  backgroundColor String   @default("#ffffff") // สีพื้นหลัง
+  textColor       String   @default("#1f2937") // สีข้อความ
+  headerBgColor   String   @default("#ffffff") // สีพื้นหลัง Header
+  footerBgColor   String   @default("#1f2937") // สีพื้นหลัง Footer
+  updatedAt       DateTime @updatedAt
+}
