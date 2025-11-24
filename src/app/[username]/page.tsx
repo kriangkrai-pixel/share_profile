@@ -435,7 +435,10 @@ export default function UserProfilePage() {
       
       const loadTheme = async () => {
         try {
-          const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+          if (!username) return;
+          
+          // ใช้ theme preferences API ตาม username
+          const response = await apiRequest(API_ENDPOINTS.THEME_USERNAME(username), {
             method: "GET",
             credentials: "include",
             cache: "no-store",
@@ -444,28 +447,34 @@ export default function UserProfilePage() {
           if (!response.ok) {
             const errorText = await response.text().catch(() => "Unknown error");
             console.warn(`⚠️ Failed to reload theme: ${response.status} ${response.statusText}`, errorText);
+            // Fallback to default theme
+            setTheme(DEFAULT_THEME_SETTINGS);
             return;
           }
           
           const data = await response.json();
           if (data && !data.error) {
-            setTheme({
-              primaryColor: data.primaryColor || "#3b82f6",
-              secondaryColor: data.secondaryColor || "#8b5cf6",
-              accentColor: data.accentColor || "#10b981",
-              backgroundColor: data.backgroundColor || "#ffffff",
-              textColor: data.textColor || "#1f2937",
-              headerBgColor: data.headerBgColor || "#ffffff",
-              headerTextColor: data.headerTextColor || data.textColor || "#1f2937",
-              footerBgColor: data.footerBgColor || "#1f2937",
-              footerTextColor: data.footerTextColor || "#ffffff",
-            });
+            setTheme(resolveTheme({
+              primaryColor: data.primaryColor,
+              secondaryColor: data.secondaryColor,
+              accentColor: data.accentColor,
+              backgroundColor: data.backgroundColor,
+              textColor: data.textColor,
+              headerBgColor: data.headerBgColor,
+              headerTextColor: data.headerTextColor,
+              footerBgColor: data.footerBgColor,
+              footerTextColor: data.footerTextColor,
+            }));
+          } else {
+            setTheme(DEFAULT_THEME_SETTINGS);
           }
         } catch (error) {
           console.error("❌ Error loading theme:", error);
           if (error instanceof TypeError && error.message === "Failed to fetch") {
             console.warn("⚠️ Backend may not be running or CORS issue.");
           }
+          // Fallback to default theme
+          setTheme(DEFAULT_THEME_SETTINGS);
         }
       };
       

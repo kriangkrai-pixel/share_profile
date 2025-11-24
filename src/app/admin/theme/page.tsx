@@ -77,17 +77,27 @@ export default function ThemeSettingsPage() {
    */
   const loadSettings = async () => {
     try {
-      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+      const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
         method: "GET",
       });
       if (response.ok) {
         const data = await response.json();
         if (data && !data.error) {
-          setSettings(data);
+          setSettings({
+            primaryColor: data.primaryColor || defaultSettings.primaryColor,
+            secondaryColor: data.secondaryColor || defaultSettings.secondaryColor,
+            accentColor: data.accentColor || defaultSettings.accentColor,
+            backgroundColor: data.backgroundColor || defaultSettings.backgroundColor,
+            textColor: data.textColor || defaultSettings.textColor,
+            headerBgColor: data.headerBgColor || defaultSettings.headerBgColor,
+            headerTextColor: data.headerTextColor || defaultSettings.headerTextColor,
+            footerBgColor: data.footerBgColor || defaultSettings.footerBgColor,
+            footerTextColor: data.footerTextColor || defaultSettings.footerTextColor,
+          });
         }
       }
     } catch (error) {
-      console.error("Error loading settings:", error);
+      console.error("Error loading theme preferences:", error);
     } finally {
       setLoading(false);
     }
@@ -99,19 +109,85 @@ export default function ThemeSettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+      // ตรวจสอบว่ามี token หรือไม่
+      const token = localStorage.getItem("adminToken");
+      if (!token) {
+        alert("❌ กรุณาเข้าสู่ระบบก่อนบันทึก");
+        setSaving(false);
+        return;
+      }
+
+      // ตรวจสอบรูปแบบสีก่อนส่ง (ต้องเป็น #ffffff หรือ #ffffffff)
+      const colorFields = [
+        'primaryColor', 'secondaryColor', 'accentColor', 'backgroundColor',
+        'textColor', 'headerBgColor', 'headerTextColor', 'footerBgColor', 'footerTextColor'
+      ];
+      
+      const invalidColors: string[] = [];
+      for (const field of colorFields) {
+        const color = settings[field as keyof SiteSettings];
+        if (color && !/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) {
+          invalidColors.push(field);
+        }
+      }
+      
+      if (invalidColors.length > 0) {
+        alert(`❌ สีต่อไปนี้ไม่ถูกต้อง (ต้องเป็นรูปแบบ #ffffff):\n${invalidColors.join(', ')}`);
+        setSaving(false);
+        return;
+      }
+
+      const response = await apiRequest(API_ENDPOINTS.THEME_UPDATE, {
         method: "PUT",
-        body: JSON.stringify(settings),
+        body: JSON.stringify({
+          primaryColor: settings.primaryColor,
+          secondaryColor: settings.secondaryColor,
+          accentColor: settings.accentColor,
+          backgroundColor: settings.backgroundColor,
+          textColor: settings.textColor,
+          headerBgColor: settings.headerBgColor,
+          headerTextColor: settings.headerTextColor,
+          footerBgColor: settings.footerBgColor,
+          footerTextColor: settings.footerTextColor,
+        }),
       });
 
       if (response.ok) {
+        const data = await response.json();
+        console.log("✅ Theme saved:", data);
         alert("✅ บันทึกการตั้งค่าสำเร็จ!");
       } else {
-        alert("❌ เกิดข้อผิดพลาดในการบันทึก");
+        let errorMessage = "Unknown error";
+        try {
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { message: errorText };
+          }
+          
+          // Handle validation errors (array of messages)
+          if (errorData.message && Array.isArray(errorData.message)) {
+            errorMessage = errorData.message.join("\n");
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          } else if (errorData.error) {
+            errorMessage = errorData.error;
+          } else {
+            errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+          }
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        
+        console.error("❌ Error saving theme:", errorMessage);
+        alert(`❌ เกิดข้อผิดพลาดในการบันทึก:\n${errorMessage}`);
       }
     } catch (error) {
-      console.error("Error saving settings:", error);
-      alert("❌ เกิดข้อผิดพลาดในการบันทึก");
+      console.error("Error saving theme preferences:", error);
+      alert("❌ เกิดข้อผิดพลาดในการบันทึก กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setSaving(false);
     }

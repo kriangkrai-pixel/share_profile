@@ -160,42 +160,56 @@ export default function HeaderFooterPage() {
    */
   const loadSettings = async () => {
     try {
-      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+      // โหลดสีจาก Theme Preferences API
+      const themeResponse = await apiRequest(API_ENDPOINTS.THEME_ME, {
         method: "GET",
         cache: "no-store",
       });
       
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unknown error");
-        console.warn(`⚠️ Failed to load settings: ${response.status} ${response.statusText}`, errorText);
-        return;
+      // โหลดข้อมูลอื่นๆ จาก Settings API
+      const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
+        method: "GET",
+        cache: "no-store",
+      });
+      
+      let themeData = null;
+      if (themeResponse.ok) {
+        themeData = await themeResponse.json();
       }
       
-      const data = await response.json();
-      if (data && !data.error) {
-        const menu = parseHeaderMenu(data.headerMenuItems);
-        setSettings({
-          headerLogoText: data.headerLogoText || defaultSettings.headerLogoText,
-          headerBgColor: data.headerBgColor || defaultSettings.headerBgColor,
-          headerTextColor: data.headerTextColor || defaultSettings.headerTextColor,
-          headerLinks: toEditableLinks(menu.links, DEFAULT_HEADER_LINKS),
-          headerCta: menu.cta || { ...DEFAULT_HEADER_CTA },
-          footerLogoText: data.footerLogoText || defaultSettings.footerLogoText,
-          footerDescription: data.footerDescription || defaultSettings.footerDescription,
-          footerEmail: data.footerEmail || defaultSettings.footerEmail,
-          footerLocation: data.footerLocation || defaultSettings.footerLocation,
-      footerPhone: data.footerPhone || defaultSettings.footerPhone,
-          footerBgColor: data.footerBgColor || defaultSettings.footerBgColor,
-          footerTextColor: data.footerTextColor || defaultSettings.footerTextColor,
-          footerLinks: toEditableLinks(data.footerLinks, DEFAULT_FOOTER_LINKS),
-      footerShowLocation:
-        data.footerShowLocation === undefined ? defaultSettings.footerShowLocation : Boolean(data.footerShowLocation),
-      footerShowEmail:
-        data.footerShowEmail === undefined ? defaultSettings.footerShowEmail : Boolean(data.footerShowEmail),
-      footerShowPhone:
-        data.footerShowPhone === undefined ? defaultSettings.footerShowPhone : Boolean(data.footerShowPhone),
-        });
+      let settingsData = null;
+      if (settingsResponse.ok) {
+        settingsData = await settingsResponse.json();
       }
+      
+      if (!settingsData || settingsData.error) {
+        const errorText = await settingsResponse.text().catch(() => "Unknown error");
+        console.warn(`⚠️ Failed to load settings: ${settingsResponse.status} ${settingsResponse.statusText}`, errorText);
+      }
+      
+      // ใช้สีจาก Theme Preferences ถ้ามี ไม่เช่นนั้นใช้จาก Settings หรือ default
+      const menu = parseHeaderMenu(settingsData?.headerMenuItems);
+      setSettings({
+        headerLogoText: settingsData?.headerLogoText || defaultSettings.headerLogoText,
+        headerBgColor: themeData?.headerBgColor || settingsData?.headerBgColor || defaultSettings.headerBgColor,
+        headerTextColor: themeData?.headerTextColor || settingsData?.headerTextColor || defaultSettings.headerTextColor,
+        headerLinks: toEditableLinks(menu.links, DEFAULT_HEADER_LINKS),
+        headerCta: menu.cta || { ...DEFAULT_HEADER_CTA },
+        footerLogoText: settingsData?.footerLogoText || defaultSettings.footerLogoText,
+        footerDescription: settingsData?.footerDescription || defaultSettings.footerDescription,
+        footerEmail: settingsData?.footerEmail || defaultSettings.footerEmail,
+        footerLocation: settingsData?.footerLocation || defaultSettings.footerLocation,
+        footerPhone: settingsData?.footerPhone || defaultSettings.footerPhone,
+        footerBgColor: themeData?.footerBgColor || settingsData?.footerBgColor || defaultSettings.footerBgColor,
+        footerTextColor: themeData?.footerTextColor || settingsData?.footerTextColor || defaultSettings.footerTextColor,
+        footerLinks: toEditableLinks(settingsData?.footerLinks, DEFAULT_FOOTER_LINKS),
+        footerShowLocation:
+          settingsData?.footerShowLocation === undefined ? defaultSettings.footerShowLocation : Boolean(settingsData.footerShowLocation),
+        footerShowEmail:
+          settingsData?.footerShowEmail === undefined ? defaultSettings.footerShowEmail : Boolean(settingsData.footerShowEmail),
+        footerShowPhone:
+          settingsData?.footerShowPhone === undefined ? defaultSettings.footerShowPhone : Boolean(settingsData.footerShowPhone),
+      });
     } catch (error) {
       console.error("Error loading settings:", error);
       if (isConnectionError(error)) {
@@ -220,10 +234,44 @@ export default function HeaderFooterPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = {
+      // ตรวจสอบว่ามี token หรือไม่
+      const token = localStorage.getItem("adminToken");
+      if (!token) {
+        showMessage("error", "❌ กรุณาเข้าสู่ระบบก่อนบันทึก");
+        setSaving(false);
+        return;
+      }
+
+      // ตรวจสอบรูปแบบสีก่อนส่ง (ต้องเป็น #ffffff หรือ #ffffffff)
+      const colorFields = ['headerBgColor', 'headerTextColor', 'footerBgColor', 'footerTextColor'];
+      const invalidColors: string[] = [];
+      for (const field of colorFields) {
+        const color = settings[field as keyof HeaderFooterSettingsForm] as string;
+        if (color && !/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) {
+          invalidColors.push(field);
+        }
+      }
+      
+      if (invalidColors.length > 0) {
+        showMessage("error", `❌ สีต่อไปนี้ไม่ถูกต้อง (ต้องเป็นรูปแบบ #ffffff):\n${invalidColors.join(', ')}`);
+        setSaving(false);
+        return;
+      }
+
+      // บันทึกสีไปยัง Theme Preferences API
+      const themeResponse = await apiRequest(API_ENDPOINTS.THEME_UPDATE, {
+        method: "PUT",
+        body: JSON.stringify({
+          headerBgColor: settings.headerBgColor,
+          headerTextColor: settings.headerTextColor,
+          footerBgColor: settings.footerBgColor,
+          footerTextColor: settings.footerTextColor,
+        }),
+      });
+
+      // บันทึกข้อมูลอื่นๆ ไปยัง Settings API
+      const settingsPayload = {
         headerLogoText: settings.headerLogoText,
-        headerBgColor: settings.headerBgColor,
-        headerTextColor: settings.headerTextColor,
         headerMenuItems: {
           links: settings.headerLinks.map(({ id, label, href, external }) => ({
             label,
@@ -236,33 +284,66 @@ export default function HeaderFooterPage() {
         footerDescription: settings.footerDescription,
         footerEmail: settings.footerEmail,
         footerLocation: settings.footerLocation,
-    footerPhone: settings.footerPhone,
-        footerBgColor: settings.footerBgColor,
-        footerTextColor: settings.footerTextColor,
+        footerPhone: settings.footerPhone,
         footerLinks: settings.footerLinks.map(({ id, label, href, external }) => ({
           label,
           href,
           external,
         })),
-    footerShowLocation: settings.footerShowLocation,
-    footerShowEmail: settings.footerShowEmail,
-    footerShowPhone: settings.footerShowPhone,
+        footerShowLocation: settings.footerShowLocation,
+        footerShowEmail: settings.footerShowEmail,
+        footerShowPhone: settings.footerShowPhone,
       };
 
-      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+      const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
         method: "PUT",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(settingsPayload),
       });
 
-      if (response.ok) {
-        showMessage("success", "✅ บันทึกการตั้งค่าสำเร็จ!");
+      // ตรวจสอบผลลัพธ์
+      let hasError = false;
+      let errorMessage = "";
+
+      if (!themeResponse.ok) {
+        hasError = true;
+        try {
+          const errorData = await themeResponse.json().catch(() => ({}));
+          if (errorData.message && Array.isArray(errorData.message)) {
+            errorMessage += `Theme: ${errorData.message.join(", ")}\n`;
+          } else if (errorData.message) {
+            errorMessage += `Theme: ${errorData.message}\n`;
+          } else {
+            errorMessage += `Theme: HTTP ${themeResponse.status}\n`;
+          }
+        } catch {
+          errorMessage += `Theme: HTTP ${themeResponse.status}\n`;
+        }
+      }
+
+      if (!settingsResponse.ok) {
+        hasError = true;
+        try {
+          const errorData = await settingsResponse.json().catch(() => ({}));
+          if (errorData.message && Array.isArray(errorData.message)) {
+            errorMessage += `Settings: ${errorData.message.join(", ")}`;
+          } else if (errorData.message) {
+            errorMessage += `Settings: ${errorData.message}`;
+          } else {
+            errorMessage += `Settings: HTTP ${settingsResponse.status}`;
+          }
+        } catch {
+          errorMessage += `Settings: HTTP ${settingsResponse.status}`;
+        }
+      }
+
+      if (hasError) {
+        showMessage("error", `❌ เกิดข้อผิดพลาดในการบันทึก:\n${errorMessage}`);
       } else {
-        const errorData = await response.json();
-        showMessage("error", `❌ ${errorData.message || "เกิดข้อผิดพลาดในการบันทึก"}`);
+        showMessage("success", "✅ บันทึกการตั้งค่าสำเร็จ!");
       }
     } catch (error) {
       console.error("Error saving settings:", error);
-      showMessage("error", "❌ เกิดข้อผิดพลาดในการบันทึก");
+      showMessage("error", "❌ เกิดข้อผิดพลาดในการบันทึก กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setSaving(false);
     }

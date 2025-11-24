@@ -119,32 +119,50 @@ export default function Home() {
 
     const loadTheme = async () => {
       try {
-        console.log("🎨 Loading theme from:", API_ENDPOINTS.SETTINGS);
-        const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
+        // ตรวจสอบว่ามี token หรือไม่
+        const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
         
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "Unknown error");
-          console.warn(`⚠️ Failed to load theme settings: ${response.status} ${response.statusText}`, errorText);
-          // Keep default theme values
-          return;
-        }
-        
-        const data = await response.json();
-        if (data && !data.error) {
-          setTheme({
-            primaryColor: data.primaryColor || "#000000ff",
-            secondaryColor: data.secondaryColor || "#8b5cf6",
-            accentColor: data.accentColor || "#10b981",
-            backgroundColor: data.backgroundColor || "#ffffff",
-            textColor: data.textColor || "#1f2937",
-            headerBgColor: data.headerBgColor || "#ffffff",
-            footerBgColor: data.footerBgColor || "#1f2937",
+        if (token) {
+          // ถ้ามี token ให้โหลด theme preferences ของ user
+          console.log("🎨 Loading theme from:", API_ENDPOINTS.THEME_ME);
+          const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
           });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data && !data.error) {
+              setTheme({
+                primaryColor: data.primaryColor || "#3b82f6",
+                secondaryColor: data.secondaryColor || "#8b5cf6",
+                accentColor: data.accentColor || "#10b981",
+                backgroundColor: data.backgroundColor || "#ffffff",
+                textColor: data.textColor || "#1f2937",
+                headerBgColor: data.headerBgColor || "#ffffff",
+                headerTextColor: data.headerTextColor || "#1f2937",
+                footerBgColor: data.footerBgColor || "#1f2937",
+                footerTextColor: data.footerTextColor || "#ffffff",
+              });
+              return;
+            }
+          }
         }
+        
+        // ถ้าไม่มี token หรือโหลดไม่สำเร็จ ให้ใช้ default theme
+        console.log("🎨 Using default theme");
+        setTheme({
+          primaryColor: "#3b82f6",
+          secondaryColor: "#8b5cf6",
+          accentColor: "#10b981",
+          backgroundColor: "#ffffff",
+          textColor: "#1f2937",
+          headerBgColor: "#ffffff",
+          headerTextColor: "#1f2937",
+          footerBgColor: "#1f2937",
+          footerTextColor: "#ffffff",
+        });
       } catch (error) {
         console.error("❌ Error loading theme:", error);
         // Check if it's a network error
@@ -152,6 +170,17 @@ export default function Home() {
           console.warn("⚠️ Backend may not be running or CORS issue. Using default theme.");
         }
         // Keep default theme values on error
+        setTheme({
+          primaryColor: "#3b82f6",
+          secondaryColor: "#8b5cf6",
+          accentColor: "#10b981",
+          backgroundColor: "#ffffff",
+          textColor: "#1f2937",
+          headerBgColor: "#ffffff",
+          headerTextColor: "#1f2937",
+          footerBgColor: "#1f2937",
+          footerTextColor: "#ffffff",
+        });
       }
     };
 
@@ -269,30 +298,48 @@ export default function Home() {
       // โหลด Theme ใหม่
       const loadTheme = async () => {
         try {
-          const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          });
+          // ตรวจสอบว่ามี token หรือไม่
+          const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
           
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => "Unknown error");
-            console.warn(`⚠️ Failed to reload theme: ${response.status} ${response.statusText}`, errorText);
-            return;
-          }
-          
-          const data = await response.json();
-          if (data && !data.error) {
-            setTheme({
-              primaryColor: data.primaryColor || "#3b82f6",
-              secondaryColor: data.secondaryColor || "#8b5cf6",
-              accentColor: data.accentColor || "#10b981",
-              backgroundColor: data.backgroundColor || "#ffffff",
-              textColor: data.textColor || "#1f2937",
-              headerBgColor: data.headerBgColor || "#ffffff",
-              footerBgColor: data.footerBgColor || "#1f2937",
+          if (token) {
+            // ถ้ามี token ให้โหลด theme preferences ของ user
+            const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store",
             });
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data && !data.error) {
+                setTheme({
+                  primaryColor: data.primaryColor || "#3b82f6",
+                  secondaryColor: data.secondaryColor || "#8b5cf6",
+                  accentColor: data.accentColor || "#10b981",
+                  backgroundColor: data.backgroundColor || "#ffffff",
+                  textColor: data.textColor || "#1f2937",
+                  headerBgColor: data.headerBgColor || "#ffffff",
+                  headerTextColor: data.headerTextColor || "#1f2937",
+                  footerBgColor: data.footerBgColor || "#1f2937",
+                  footerTextColor: data.footerTextColor || "#ffffff",
+                });
+                return;
+              }
+            }
           }
+          
+          // ถ้าไม่มี token หรือโหลดไม่สำเร็จ ให้ใช้ default theme
+          setTheme({
+            primaryColor: "#3b82f6",
+            secondaryColor: "#8b5cf6",
+            accentColor: "#10b981",
+            backgroundColor: "#ffffff",
+            textColor: "#1f2937",
+            headerBgColor: "#ffffff",
+            headerTextColor: "#1f2937",
+            footerBgColor: "#1f2937",
+            footerTextColor: "#ffffff",
+          });
         } catch (error) {
           console.error("❌ Error loading theme:", error);
           if (error instanceof TypeError && error.message === "Failed to fetch") {
