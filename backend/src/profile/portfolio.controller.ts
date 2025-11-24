@@ -8,30 +8,90 @@ import {
   Query,
   NotFoundException,
   BadRequestException,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('profile/portfolio')
 export class PortfolioController {
   constructor(private prisma: PrismaService) {}
 
   /**
+   * Helper method: หา PageContent จาก userId และสร้างถ้ายังไม่มี
+   */
+  private async getOrCreatePageContent(userId: number) {
+    let pageContent = await this.prisma.pageContent.findUnique({
+      where: { userId },
+    });
+
+    if (!pageContent) {
+      pageContent = await this.prisma.pageContent.create({
+        data: {
+          userId,
+          name: '',
+          email: '',
+          phone: '',
+          location: '',
+          description: '',
+          bio: '',
+          achievement: '',
+        },
+      });
+    }
+
+    return pageContent;
+  }
+
+  /**
+   * Helper method: หา Profile จาก userId และสร้างถ้ายังไม่มี
+   * ต้องใช้ profileId เพราะ Prisma schema กำหนดให้ profileId เป็น required
+   */
+  private async getOrCreateProfile(userId: number) {
+    let profile = await this.prisma.profile.findUnique({
+      where: { userId },
+    });
+
+    if (!profile) {
+      profile = await this.prisma.profile.create({
+        data: {
+          userId,
+          name: '',
+          email: '',
+          phone: '',
+          location: '',
+          description: '',
+          bio: '',
+          achievement: '',
+        },
+      });
+    }
+
+    return profile;
+  }
+
+  /**
    * GET /api/profile/portfolio
    * ดึงข้อมูลผลงานทั้งหมด
+   * Protected: ต้อง login ก่อน
    */
   @Get()
-  async getPortfolios() {
+  @UseGuards(JwtAuthGuard)
+  async getPortfolios(@Request() req: any) {
     try {
-      const profile = await this.prisma.profile.findFirst({
+      // IMPORTANT: ใช้ userId จาก JWT token เท่านั้น
+      const pageContent = await this.prisma.pageContent.findUnique({
+        where: { userId: req.user.userId },
         include: { portfolios: true },
       });
 
-      if (!profile) {
+      if (!pageContent) {
         return [];
       }
 
-      console.log(`📋 Fetched ${profile.portfolios.length} portfolios`);
-      return profile.portfolios;
+      console.log(`📋 Fetched ${pageContent.portfolios.length} portfolios for user: ${req.user.username}`);
+      return pageContent.portfolios;
     } catch (error) {
       console.error('❌ Error fetching portfolios:', error);
       throw error;
@@ -41,11 +101,16 @@ export class PortfolioController {
   /**
    * POST /api/profile/portfolio
    * สร้างผลงานใหม่
+   * Protected: ต้อง login ก่อน
    */
   @Post()
-  async createPortfolio(@Body() data: any) {
+  @UseGuards(JwtAuthGuard)
+  async createPortfolio(@Request() req: any, @Body() data: any) {
     try {
       const { title, description, image, link } = data;
+
+      // IMPORTANT: ไม่เชื่อถือ userId จาก request body
+      // ใช้ userId จาก JWT token เท่านั้น
 
       // Validation
       if (!title || !description) {
@@ -58,10 +123,8 @@ export class PortfolioController {
         console.log(`📷 Creating portfolio with image: ${imageSizeKB} KB`);
       }
 
-      let profile = await this.prisma.profile.findFirst();
-      if (!profile) {
-        throw new NotFoundException('ไม่พบข้อมูลโปรไฟล์');
-      }
+      const pageContent = await this.getOrCreatePageContent(req.user.userId);
+      const profile = await this.getOrCreateProfile(req.user.userId);
 
       const portfolio = await this.prisma.portfolio.create({
         data: {
@@ -69,11 +132,12 @@ export class PortfolioController {
           description,
           image: image || null,
           link: link || null,
-          profileId: profile.id,
+          profileId: profile.id, // Required by Prisma schema
+          pageContentId: pageContent.id, // For user-specific content
         },
       });
 
-      console.log(`✅ Portfolio created: ${portfolio.title} (ID: ${portfolio.id})`);
+      console.log(`✅ Portfolio created: ${portfolio.title} (ID: ${portfolio.id}) for user: ${req.user.username}`);
       return { success: true, portfolio };
     } catch (error: any) {
       console.error('❌ Error creating portfolio:', error);
@@ -98,25 +162,26 @@ export class PortfolioController {
   /**
    * PUT /api/profile/portfolio
    * อัปเดตผลงานทั้งหมด
+   * Protected: ต้อง login ก่อน
    */
   @Put()
-  async updatePortfolios(@Body() body: { portfolios: any[] }) {
+  @UseGuards(JwtAuthGuard)
+  async updatePortfolios(@Request() req: any, @Body() body: { portfolios: any[] }) {
     const { portfolios } = body;
 
     try {
-      let profile = await this.prisma.profile.findFirst();
-      if (!profile) {
-        throw new NotFoundException('ไม่พบข้อมูลโปรไฟล์');
-      }
+      // IMPORTANT: ใช้ userId จาก JWT token เท่านั้น
+      const pageContent = await this.getOrCreatePageContent(req.user.userId);
+      const profile = await this.getOrCreateProfile(req.user.userId);
 
       // บันทึกค่าเก่าก่อนลบ
       const oldPortfolios = await this.prisma.portfolio.findMany({
-        where: { profileId: profile.id },
+        where: { pageContentId: pageContent.id },
       });
 
-      // ลบผลงานเดิมทั้งหมด
+      // ลบผลงานเดิมทั้งหมดของ user นี้เท่านั้น
       await this.prisma.portfolio.deleteMany({
-        where: { profileId: profile.id },
+        where: { pageContentId: pageContent.id },
       });
 
       // เพิ่มผลงานใหม่ทั้งหมด
@@ -135,7 +200,8 @@ export class PortfolioController {
             description: port.description,
             image: port.image,
             link: port.link,
-            profileId: profile.id,
+            profileId: profile.id, // Required by Prisma schema
+            pageContentId: pageContent.id, // For user-specific content
           })),
         });
       }
@@ -144,6 +210,7 @@ export class PortfolioController {
       try {
         await this.prisma.editHistory.create({
           data: {
+            userId: req.user.userId,
             page: 'portfolio',
             section: 'all',
             action: 'update',
@@ -179,11 +246,22 @@ export class PortfolioController {
   /**
    * DELETE /api/profile/portfolio?id=X
    * ลบผลงาน
+   * Protected: ต้อง login ก่อน และสามารถลบได้เฉพาะของตัวเอง
    */
   @Delete()
-  async deletePortfolio(@Query('id') id: string) {
+  @UseGuards(JwtAuthGuard)
+  async deletePortfolio(@Request() req: any, @Query('id') id: string) {
     if (!id) {
       throw new NotFoundException('กรุณาระบุ ID ผลงาน');
+    }
+
+    // IMPORTANT: ตรวจสอบว่า portfolio นี้เป็นของ user นี้หรือไม่
+    const pageContent = await this.prisma.pageContent.findUnique({
+      where: { userId: req.user.userId },
+    });
+
+    if (!pageContent) {
+      throw new NotFoundException('ไม่พบข้อมูลเนื้อหาของผู้ใช้');
     }
 
     // ดึงข้อมูลผลงานก่อนลบ
@@ -195,6 +273,11 @@ export class PortfolioController {
       throw new NotFoundException('ไม่พบผลงานที่ต้องการลบ');
     }
 
+    // ตรวจสอบว่า portfolio นี้เป็นของ user นี้หรือไม่
+    if (portfolio.pageContentId !== pageContent.id) {
+      throw new BadRequestException('คุณไม่มีสิทธิ์ลบผลงานนี้');
+    }
+
     // ลบผลงาน
     await this.prisma.portfolio.delete({
       where: { id: parseInt(id) },
@@ -204,6 +287,7 @@ export class PortfolioController {
     try {
       await this.prisma.editHistory.create({
         data: {
+          userId: req.user.userId,
           page: 'portfolio',
           section: 'item',
           action: 'delete',

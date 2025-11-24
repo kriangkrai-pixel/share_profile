@@ -1,5 +1,5 @@
 import { Controller, Get, Put, Body } from '@nestjs/common';
-import { SettingsService } from './settings.service';
+import { SettingsResponse, SettingsService } from './settings.service';
 
 @Controller('settings')
 export class SettingsController {
@@ -10,7 +10,7 @@ export class SettingsController {
    * ดึงการตั้งค่าทั้งหมด (Theme, Colors, ฯลฯ)
    */
   @Get()
-  async getSettings() {
+  async getSettings(): Promise<SettingsResponse> {
     console.log('📋 Fetching settings');
     return this.settingsService.getSettings();
   }
@@ -20,7 +20,7 @@ export class SettingsController {
    * อัปเดตการตั้งค่า
    */
   @Put()
-  async updateSettings(@Body() data: any) {
+  async updateSettings(@Body() data: any): Promise<SettingsResponse> {
     console.log('✏️ Updating settings');
     return this.settingsService.updateSettings(data);
   }

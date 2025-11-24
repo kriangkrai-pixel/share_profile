@@ -23,7 +23,9 @@
     "prod:cluster:stop": "pm2 stop ecosystem.backend-cluster.config.js",
     "prod:cluster:restart": "pm2 restart ecosystem.backend-cluster.config.js",
     "setup:prod": "bash scripts/production.sh",
-    "monitor": "bash scripts/monitor.sh"
+    "monitor": "bash scripts/monitor.sh",
+    "cleanup": "bash scripts/cleanup.sh",
+    "dev:clean": "bash scripts/cleanup.sh && npm run dev:all"
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",

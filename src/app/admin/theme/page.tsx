@@ -23,7 +23,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 interface SiteSettings {
   id?: number;
@@ -57,6 +58,7 @@ export default function ThemeSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
+  const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
@@ -64,6 +66,8 @@ export default function ThemeSettingsPage() {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
+      const currentUsername = getUsernameFromToken();
+      setUsername(currentUsername);
       loadSettings();
     }
   }, [router]);
@@ -73,12 +77,14 @@ export default function ThemeSettingsPage() {
    */
   const loadSettings = async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.SETTINGS, {
-        credentials: "include",
+      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+        method: "GET",
       });
-      const data = await response.json();
-      if (data && !data.error) {
-        setSettings(data);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && !data.error) {
+          setSettings(data);
+        }
       }
     } catch (error) {
       console.error("Error loading settings:", error);
@@ -93,10 +99,8 @@ export default function ThemeSettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch(API_ENDPOINTS.SETTINGS, {
+      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(settings),
       });
 
@@ -159,7 +163,7 @@ export default function ThemeSettingsPage() {
             </div>
 
             <Link
-              href="/"
+              href={username ? `/${username}` : "/"}
               target="_blank"
               className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
             >

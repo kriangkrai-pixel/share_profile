@@ -1,5 +1,6 @@
-import { Controller, Get, Put, Post, Body, Query } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { LayoutService } from './layout.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('layout')
 export class LayoutController {
@@ -20,8 +21,10 @@ export class LayoutController {
   /**
    * POST /api/layout
    * สร้าง Layout ใหม่
+   * Protected: ต้อง login ก่อน
    */
   @Post()
+  @UseGuards(JwtAuthGuard)
   async createLayout(@Body() data: { name?: string }) {
     console.log(`➕ Creating new layout: ${data.name || 'Unnamed'}`);
     return this.layoutService.createLayout(data.name);
@@ -30,8 +33,10 @@ export class LayoutController {
   /**
    * PUT /api/layout
    * อัปเดต Layout
+   * Protected: ต้อง login ก่อน
    */
   @Put()
+  @UseGuards(JwtAuthGuard)
   async updateLayout(@Body() data: any) {
     console.log(`✏️ Updating layout ID: ${data.id}`);
     return this.layoutService.updateLayout(data.id, data);

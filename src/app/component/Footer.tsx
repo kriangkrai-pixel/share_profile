@@ -1,91 +1,129 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { useThemeConfig } from "../context/ThemeConfigContext";
+import { useSiteSettings } from "../context/SiteSettingsContext";
 
 export default function Footer() {
   const pathname = usePathname();
-  const [settings, setSettings] = useState({
-    footerLogoText: "KRIANGKRAI.P",
-    footerDescription: "พัฒนาและเรียนรู้เทคโนโลยีใหม่ ๆ อย่างต่อเนื่อง",
-    footerEmail: "kik550123@gmail.com",
-    footerLocation: "ภูเก็ต, Thailand",
-    footerBgColor: "#1f2937",
-    footerTextColor: "#ffffff",
-  });
+  const { theme } = useThemeConfig();
+  const { settings, isLoading: settingsLoading, error: settingsError } = useSiteSettings();
+  const footerTheme = theme.footer;
+  const palette = theme.palette;
 
-  // ซ่อน Footer ในหน้า admin
   if (pathname?.startsWith("/admin")) {
     return null;
   }
 
-  // โหลด settings จาก API
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const response = await fetch(API_ENDPOINTS.SETTINGS, {
-          credentials: "include",
-        });
-        const data = await response.json();
-        if (data && !data.error) {
-          setSettings({
-            footerLogoText: data.footerLogoText || "KRIANGKRAI.P",
-            footerDescription: data.footerDescription || "พัฒนาและเรียนรู้เทคโนโลยีใหม่ ๆ อย่างต่อเนื่อง",
-            footerEmail: data.footerEmail || "kik550123@gmail.com",
-            footerLocation: data.footerLocation || "ภูเก็ต, Thailand",
-            footerBgColor: data.footerBgColor || "#1f2937",
-            footerTextColor: data.footerTextColor || "#ffffff",
-          });
-        }
-      } catch (error) {
-        console.error("Error loading footer settings:", error);
-      }
-    };
-    loadSettings();
-  }, []);
-
   const year = new Date().getFullYear();
+  const navLinks =
+    settings.footerLinks?.length > 0 ? settings.footerLinks : footerTheme.links || [];
+  const backgroundColor = `var(--footer-bg, ${
+    settings.footerBgColor || footerTheme.backgroundColor || palette.primary
+  })`;
+  const textColor = `var(--footer-text, ${
+    settings.footerTextColor || footerTheme.textColor || palette.textOnPrimary || "#ffffff"
+  })`;
+
+  const displayName = settings.footerLogoText || theme.header.logoText || "-";
+  const displayDescription =
+    settings.footerDescription || footerTheme.text || "-";
+  const displayEmail =
+    settings.footerShowEmail === false
+      ? undefined
+      : settings.footerEmail || footerTheme.contactEmail || "hello@portfolio.pro";
+  const displayLocation =
+    settings.footerShowLocation === false ? undefined : settings.footerLocation || footerTheme.contactLocation;
+  const displayPhone =
+    settings.footerShowPhone === false
+      ? undefined
+      : settings.footerPhone?.trim()
+      ? settings.footerPhone
+      : footerTheme.contactPhone || "080-000-1234";
+
   return (
-    <footer className="mt-12 border-t" style={{ backgroundColor: settings.footerBgColor }}>
+    <footer className="mt-12 border-t" style={{ backgroundColor }}>
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
           <div>
-            <h2 className="text-xl font-bold" style={{ color: settings.footerTextColor }}>{settings.footerLogoText}</h2>
-            <p className="mt-2" style={{ color: settings.footerTextColor, opacity: 0.9 }}>{settings.footerDescription}</p>
+            <h2
+              className="text-xl font-bold"
+              style={{ color: textColor }}
+              aria-live="polite"
+              title={settingsError || undefined}
+            >
+              {settingsLoading ? "กำลังโหลด..." : displayName}
+            </h2>
+            <p className="mt-2" style={{ color: textColor, opacity: 0.9 }} aria-live="polite">
+              {settingsLoading ? "กำลังโหลดข้อมูล..." : displayDescription}
+            </p>
           </div>
 
           <div className="flex md:justify-center">
-            <ul className="space-y-2" style={{ color: settings.footerTextColor, opacity: 0.9 }}>
-              <li>
-                <a className="hover:opacity-100 transition-opacity" style={{ color: settings.footerTextColor }} href="/#">หน้าแรก</a>
-              </li>
-              <li>
-                <a className="hover:opacity-100 transition-opacity" style={{ color: settings.footerTextColor }} href="/#contact">ติดต่อ</a>
-              </li>
+            <ul className="space-y-2" style={{ color: textColor, opacity: 0.9 }}>
+              {navLinks.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    target={link.external ? "_blank" : undefined}
+                    rel={link.external ? "noopener noreferrer" : undefined}
+                    className="hover:opacity-100 transition-opacity"
+                    style={{ color: textColor }}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
 
-          <div className="md:text-right" style={{ color: settings.footerTextColor, opacity: 0.9 }}>
-            <p>
-              <span className="font-medium" style={{ opacity: 1 }}>อีเมล:</span> {settings.footerEmail}
-            </p>
-            <p className="mt-1">
-              <span className="font-medium" style={{ opacity: 1 }}>{settings.footerLocation}</span>
-            </p>
+          <div
+            className="flex flex-col items-start md:items-end gap-1 text-sm leading-tight"
+            style={{ color: textColor }}
+          >
+            {displayEmail && (
+              <p className="font-medium" aria-label="อีเมล">
+                <span className="opacity-70 mr-1">อีเมล:</span>
+                <span className="break-all">{settingsLoading ? "กำลังโหลด..." : displayEmail}</span>
+              </p>
+            )}
+            {displayLocation && (
+              <p className="font-medium" aria-label="ที่อยู่">
+                <span className="opacity-70 mr-1">ที่อยู่:</span>
+                <span className="break-words">{settingsLoading ? "กำลังโหลด..." : displayLocation}</span>
+              </p>
+            )}
+            {displayPhone && (
+              <p className="font-medium" aria-label="เบอร์โทร">
+                <span className="opacity-70 mr-1">เบอร์โทร:</span>
+                <span className="break-all">{settingsLoading ? "กำลังโหลด..." : displayPhone}</span>
+              </p>
+            )}
           </div>
         </div>
 
-        <div className="mt-8 flex flex-col md:flex-row items-center justify-between gap-4 border-t pt-6" style={{ borderColor: settings.footerTextColor, opacity: 0.3 }}>
-          <p className="text-sm" style={{ color: settings.footerTextColor, opacity: 0.9 }}>© {year} {settings.footerLogoText}. All rights reserved.</p>
+        <div
+          className="mt-8 flex flex-col md:flex-row items-center justify-between gap-4 border-t pt-6"
+          style={{ borderColor: textColor, opacity: 0.3 }}
+        >
+          <p className="text-sm" style={{ color: textColor, opacity: 0.9 }}>
+            © {year} {displayName}. {footerTheme.copyright || "All rights reserved."}
+          </p>
           <div className="flex items-center gap-4">
-            <a href="/" className="text-sm hover:opacity-100 transition-opacity" style={{ color: settings.footerTextColor, opacity: 0.9 }}>Privacy</a>
-            <a href="/" className="text-sm hover:opacity-100 transition-opacity" style={{ color: settings.footerTextColor, opacity: 0.9 }}>Terms</a>
+            {navLinks.slice(0, 2).map((link) => (
+              <Link
+                key={`footer-bottom-${link.label}`}
+                href={link.href}
+                className="text-sm hover:opacity-100 transition-opacity"
+                style={{ color: textColor, opacity: 0.9 }}
+              >
+                {link.label}
+              </Link>
+            ))}
           </div>
         </div>
       </div>
     </footer>
   );
 }
-
-

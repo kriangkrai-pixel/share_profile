@@ -26,6 +26,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAdminSession } from "../../hooks/useAdminSession";
 import { useProfile } from "../../context/ProfileContext";
+import { API_ENDPOINTS, apiRequest } from "@/lib/api-config";
 
 interface SectionOrder {
   id: string;
@@ -53,6 +54,7 @@ export default function LiveEditorPage() {
     name: "",
     description: "",
     heroImage: "",
+    heroImagePath: "",
     
     // About
     bio: "",
@@ -68,6 +70,7 @@ export default function LiveEditorPage() {
     phone: "",
     location: "",
     contactImage: "",
+    contactImagePath: "",
   });
   
   // Section order
@@ -102,6 +105,7 @@ export default function LiveEditorPage() {
       name: profile.name || "",
       description: profile.description || "",
       heroImage: profile.heroImage || "",
+      heroImagePath: "",
       bio: profile.bio || "",
       achievement: profile.achievement || "",
       skills: profile.skills || [],
@@ -109,27 +113,76 @@ export default function LiveEditorPage() {
       phone: profile.phone || "",
       location: profile.location || "",
       contactImage: profile.contactImage || "",
+      contactImagePath: "",
     });
     setLoading(false);
   };
 
-  // Image upload
+  // Image upload - ใช้ upload API endpoint
   const handleImageUpload = async (file: File, type: "hero" | "contact") => {
     if (type === "hero") setUploadingHero(true);
     else setUploadingContact(true);
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      if (type === "hero") {
-        setFormData({ ...formData, heroImage: base64 });
-      } else {
-        setFormData({ ...formData, contactImage: base64 });
+    try {
+      // ตรวจสอบประเภทไฟล์
+      if (!file.type.startsWith("image/")) {
+        alert("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
+        if (type === "hero") setUploadingHero(false);
+        else setUploadingContact(false);
+        return;
       }
+
+      // ตรวจสอบขนาดไฟล์
+      if (file.size > 10 * 1024 * 1024) {
+        alert("ขนาดไฟล์ต้องไม่เกิน 10MB");
+        if (type === "hero") setUploadingHero(false);
+        else setUploadingContact(false);
+        return;
+      }
+
+      // สร้าง FormData สำหรับอัปโหลด
+      const uploadData = new FormData();
+      uploadData.append("file", file);
+
+      // อัปโหลดไปยัง /api/upload/profile endpoint
+      const response = await apiRequest(API_ENDPOINTS.UPLOAD_PROFILE, {
+        method: "POST",
+        body: uploadData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "เกิดข้อผิดพลาดในการอัปโหลด" }));
+        throw new Error(errorData.message || "เกิดข้อผิดพลาดในการอัปโหลด");
+      }
+
+      const result = await response.json();
+
+      const previewUrl = result.imageUrl || result.relativePath || "";
+      const relativePath = result.relativePath || "";
+      
+      if (type === "hero") {
+        setFormData((prev) => ({
+          ...prev,
+          heroImage: previewUrl,
+          heroImagePath: relativePath,
+        }));
+        setUploadingHero(false);
+        console.log(`✅ Hero image uploaded: ${relativePath}`);
+      } else {
+        setFormData((prev) => ({
+          ...prev,
+          contactImage: previewUrl,
+          contactImagePath: relativePath,
+        }));
+        setUploadingContact(false);
+        console.log(`✅ Contact image uploaded: ${relativePath}`);
+      }
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      alert(`❌ เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ: ${error.message || "กรุณาลองใหม่อีกครั้ง"}`);
       if (type === "hero") setUploadingHero(false);
       else setUploadingContact(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   // Add/Remove skill
@@ -156,17 +209,31 @@ export default function LiveEditorPage() {
 
     setSaving(true);
     try {
+      const heroImagePayload =
+        formData.heroImagePath && formData.heroImagePath.trim()
+          ? formData.heroImagePath.trim()
+          : formData.heroImage && formData.heroImage.trim()
+          ? formData.heroImage.trim()
+          : undefined;
+
+      const contactImagePayload =
+        formData.contactImagePath && formData.contactImagePath.trim()
+          ? formData.contactImagePath.trim()
+          : formData.contactImage && formData.contactImage.trim()
+          ? formData.contactImage.trim()
+          : undefined;
+
       await updateProfile({
         name: formData.name,
         description: formData.description,
-        heroImage: formData.heroImage,
+        heroImage: heroImagePayload,
         bio: formData.bio,
         achievement: formData.achievement,
         skills: formData.skills,
         email: formData.email,
         phone: formData.phone,
         location: formData.location,
-        contactImage: formData.contactImage,
+        contactImage: contactImagePayload,
       });
 
       alert("✅ บันทึกสำเร็จ! รีเฟรชหน้าเว็บเพื่อดูการเปลี่ยนแปลง");

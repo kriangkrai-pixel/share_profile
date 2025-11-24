@@ -22,12 +22,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../hooks/useAdminSession";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 export default function AdminDashboard() {
   const router = useRouter();
   useAdminSession();
   const [authenticated, setAuthenticated] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
   
   // สถิติต่างๆ - แสดงจำนวนข้อมูลในระบบ
   const [stats, setStats] = useState({
@@ -37,11 +39,14 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
+    const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
     if (!token) {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
+      // ดึง username จาก token
+      const currentUsername = getUsernameFromToken();
+      setUsername(currentUsername);
       loadStats(); // โหลดสถิติเมื่อเข้าหน้า
     }
   }, [router]);
@@ -52,9 +57,9 @@ export default function AdminDashboard() {
    */
   const loadStats = async () => {
     try {
-      // ดึงข้อมูล Profile ที่มีทั้ง Portfolio และ Experience
-      const profileRes = await fetch(API_ENDPOINTS.PROFILE, {
-        credentials: "include",
+      // ดึงข้อมูล Content (PageContent) ที่มีทั้ง Portfolio และ Experience
+      const profileRes = await apiRequest(API_ENDPOINTS.CONTENT_ME, {
+        method: "GET",
         cache: "no-store",
       });
       
@@ -85,8 +90,8 @@ export default function AdminDashboard() {
       // ดึงจำนวนข้อความที่ยังไม่อ่าน
       let unreadCount = 0;
       try {
-        const msgRes = await fetch(`${API_ENDPOINTS.CONTACT}?unreadOnly=true`, {
-          credentials: "include",
+        const msgRes = await apiRequest(`${API_ENDPOINTS.CONTACT}?unreadOnly=true`, {
+          method: "GET",
           cache: "no-store",
         });
         if (msgRes.ok) {
@@ -120,7 +125,9 @@ export default function AdminDashboard() {
    * - Redirect ไปหน้า Login
    */
   const handleLogout = () => {
+    localStorage.removeItem("authToken");
     localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminLoginTime");
     router.push("/admin/login");
   };
 
@@ -138,13 +145,17 @@ export default function AdminDashboard() {
                 Admin Dashboard
               </h1>
               <p className="text-sm text-gray-600 mt-1">
-                ยินดีต้อนรับสู่ระบบจัดการเว็บไซต์
+                {username ? (
+                  <>ยินดีต้อนรับ, <span className="font-semibold text-blue-600">{username}</span></>
+                ) : (
+                  "ยินดีต้อนรับสู่ระบบจัดการเว็บไซต์"
+                )}
               </p>
             </div>
 
             <div className="flex gap-3">
               <Link
-                href="/"
+                href={username ? `/${username}` : "/"}
                 target="_blank"
                 className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
               >

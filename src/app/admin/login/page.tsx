@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import Link from "next/link";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,27 +18,43 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch(API_ENDPOINTS.LOGIN, {
+      const response = await apiRequest(API_ENDPOINTS.LOGIN, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
         body: JSON.stringify({ username, password }),
       });
 
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+
+        // Handle validation errors
+        if (errorData.message && Array.isArray(errorData.message)) {
+          setError(errorData.message.join("\n"));
+        } else {
+          setError(errorData.message || errorData.error || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+        }
+        return;
+      }
+
       const data = await response.json();
 
-      if (response.ok) {
-        // บันทึก token และเวลาที่ login ไว้ใน localStorage
-        localStorage.setItem("adminToken", data.token);
-        localStorage.setItem("adminLoginTime", Date.now().toString());
-        router.push("/admin");
-      } else {
-        setError(data.error || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
-      }
+      // บันทึก JWT token และเวลาที่ login ไว้ใน localStorage
+      localStorage.setItem("authToken", data.token);
+      localStorage.setItem("adminToken", data.token); // Keep for backward compatibility
+      localStorage.setItem("adminLoginTime", Date.now().toString());
+      router.push("/admin");
     } catch (err) {
-      setError("เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
+      console.error("Error during login:", err);
+      if (isConnectionError(err)) {
+        setError("ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตและลองใหม่อีกครั้ง");
+      } else {
+        setError("เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
+      }
     } finally {
       setLoading(false);
     }
@@ -60,6 +77,15 @@ export default function LoginPage() {
               Admin Login
             </h1>
             <p className="text-gray-600">เข้าสู่ระบบเพื่อจัดการเว็บไซต์ของคุณ</p>
+            <p className="text-sm text-gray-500 mt-2">
+              ยังไม่มีบัญชี?{" "}
+              <Link
+                href="/register"
+                className="text-blue-600 hover:text-blue-700 font-semibold transition-colors"
+              >
+                สมัครสมาชิก
+              </Link>
+            </p>
           </div>
 
           {/* Error Message */}

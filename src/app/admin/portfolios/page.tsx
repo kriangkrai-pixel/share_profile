@@ -24,7 +24,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAdminSession } from "../../hooks/useAdminSession";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 interface Portfolio {
   id: number;
@@ -43,6 +44,7 @@ export default function PortfoliosPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
 
   // Modal states
   const [showAddModal, setShowAddModal] = useState(false);
@@ -65,6 +67,8 @@ export default function PortfoliosPage() {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
+      const currentUsername = getUsernameFromToken();
+      setUsername(currentUsername);
       loadPortfolios();
     }
   }, [router]);
@@ -74,8 +78,8 @@ export default function PortfoliosPage() {
    */
   const loadPortfolios = async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.PROFILE, {
-        credentials: "include",
+      const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+        method: "GET",
       });
       
       if (!response.ok) {
@@ -258,18 +262,14 @@ export default function PortfoliosPage() {
               }
         );
         
-        response = await fetch(API_ENDPOINTS.PORTFOLIO, {
+        response = await apiRequest(API_ENDPOINTS.PORTFOLIO, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({ portfolios: updatedPortfolios }),
         });
       } else {
         // เพิ่มใหม่: ส่ง single object
-        response = await fetch(API_ENDPOINTS.PORTFOLIO, {
+        response = await apiRequest(API_ENDPOINTS.PORTFOLIO, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify(formData),
         });
       }
@@ -277,10 +277,8 @@ export default function PortfoliosPage() {
       if (response.ok) {
         // บันทึกประวัติ
         try {
-          await fetch(API_ENDPOINTS.EDIT_HISTORY, {
+          await apiRequest(API_ENDPOINTS.EDIT_HISTORY, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify({
               page: "Portfolio",
               action: editingPortfolio ? "update" : "create",
@@ -323,9 +321,8 @@ export default function PortfoliosPage() {
     if (!confirm(`คุณต้องการลบผลงาน "${title}" หรือไม่?`)) return;
 
     try {
-      const response = await fetch(`${API_ENDPOINTS.PORTFOLIO}?id=${id}`, {
+      const response = await apiRequest(`${API_ENDPOINTS.PORTFOLIO}?id=${id}`, {
         method: "DELETE",
-        credentials: "include",
       });
 
       if (response.ok) {
@@ -380,7 +377,7 @@ export default function PortfoliosPage() {
 
             <div className="flex gap-3">
               <Link
-                href="/"
+                href={username ? `/${username}` : "/"}
                 target="_blank"
                 className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
               >

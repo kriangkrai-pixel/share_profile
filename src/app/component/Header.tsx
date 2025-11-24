@@ -1,94 +1,147 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { useThemeConfig } from "../context/ThemeConfigContext";
+import { useSiteSettings } from "../context/SiteSettingsContext";
 
 export default function Header() {
   const pathname = usePathname();
+  const { theme } = useThemeConfig();
+  const { settings, isLoading: siteSettingsLoading } = useSiteSettings();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [logoText, setLogoText] = useState("KRIANGKRAI.P");
-  const [bgColor, setBgColor] = useState("#ffffff");
-  const [textColor, setTextColor] = useState("#1f2937");
 
-  // ซ่อน Header ในหน้า admin
-  if (pathname?.startsWith("/admin")) {
+  const headerTheme = theme.header;
+  const palette = theme.palette;
+  const headerMenu = settings.headerMenuItems;
+  const navLinks = headerMenu?.links?.length ? headerMenu.links : headerTheme.links || [];
+
+  const withVarFallback = (variable: string, fallback: string) => `var(${variable}, ${fallback})`;
+
+  const colors = useMemo(() => {
+    const bgFallback = settings.headerBgColor || headerTheme.backgroundColor || palette.surface || "#ffffff";
+    const textFallback = settings.headerTextColor || headerTheme.textColor || palette.text || "#1f2937";
+    return {
+      background: withVarFallback("--header-bg", bgFallback),
+      text: withVarFallback("--header-text", textFallback),
+    };
+  }, [
+    settings.headerBgColor,
+    settings.headerTextColor,
+    headerTheme.backgroundColor,
+    headerTheme.textColor,
+    palette.surface,
+    palette.text,
+  ]);
+
+  if (pathname?.startsWith("/admin") || pathname === "/register") {
     return null;
   }
 
-  // โหลด settings จาก API
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const response = await fetch(API_ENDPOINTS.SETTINGS, {
-          credentials: "include",
-        });
-        const data = await response.json();
-        if (data && !data.error) {
-          if (data.headerLogoText) setLogoText(data.headerLogoText);
-          if (data.headerBgColor) setBgColor(data.headerBgColor);
-          if (data.headerTextColor) setTextColor(data.headerTextColor);
-        }
-      } catch (error) {
-        console.error("Error loading header settings:", error);
-      }
-    };
-    loadSettings();
-  }, []);
-
-  // ปิดเมนูเมื่อคลิกลิงก์
   const closeMenu = () => {
     setIsMenuOpen(false);
   };
 
-  // ฟังก์ชันสำหรับ scroll ไปยัง section
-  const scrollToSection = (sectionId: string, e?: React.MouseEvent) => {
+  const scrollToSection = (href: string, e?: React.MouseEvent) => {
     e?.preventDefault();
-    closeMenu(); // ปิดเมนูเมื่อคลิก
-    
+    closeMenu();
+
+    const target = href.replace("/#", "").replace("#", "");
+
     if (pathname === "/") {
-      // ถ้า sectionId เป็น "#" หรือว่าง ให้ scroll ไปยังด้านบน
-      if (sectionId === "#" || sectionId === "") {
+      if (!target) {
         window.history.pushState(null, "", "/");
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
-      
-      // ถ้าอยู่หน้าแรก ให้ scroll ไปยัง section
-      const element = document.getElementById(sectionId);
+
+      const element = document.getElementById(target);
       if (element) {
-        // อัปเดต URL hash
-        window.history.pushState(null, "", `#${sectionId}`);
+        window.history.pushState(null, "", `#${target}`);
         element.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     } else {
-      // ถ้าอยู่หน้าอื่น ให้ไปหน้าแรกแล้ว scroll
-      if (sectionId === "#" || sectionId === "") {
-        window.location.href = "/";
-      } else {
-        window.location.href = `/#${sectionId}`;
-      }
+      window.location.href = target ? `/#${target}` : "/";
     }
   };
 
+  const isSectionLink = (href: string) =>
+    href?.startsWith("#") || href?.startsWith("/#");
+
+  const renderNavButton = (
+    link: { label: string; href: string; external?: boolean },
+    variant: "desktop" | "mobile"
+  ) => {
+    if (isSectionLink(link.href)) {
+      return (
+        <button
+          key={`${variant}-${link.label}`}
+          onClick={(e) => scrollToSection(link.href, e)}
+          className={
+            variant === "desktop"
+              ? "hover:text-blue-600 transition-colors duration-300 cursor-pointer"
+              : "w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
+          }
+          style={{ color: colors.text }}
+        >
+          {link.label}
+        </button>
+      );
+    }
+
+    return (
+      <Link
+        key={`${variant}-${link.label}`}
+        href={link.href || "/"}
+        target={link.external ? "_blank" : undefined}
+        rel={link.external ? "noopener noreferrer" : undefined}
+        onClick={closeMenu}
+        className={
+          variant === "desktop"
+            ? "hover:text-blue-600 transition-colors duration-300"
+            : "block w-full px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
+        }
+        style={{ color: colors.text }}
+      >
+        {link.label}
+      </Link>
+    );
+  };
+
+  const logoText = settings.headerLogoText || headerTheme.logoText || "PORTFOLIO.PRO";
+
+  const logo = (
+    <Link
+      href="/"
+      onClick={closeMenu}
+      className="flex items-center gap-3 text-xl md:text-2xl font-bold hover:text-blue-600 transition-colors"
+      style={{ color: colors.text }}
+    >
+      {headerTheme.logoImage ? (
+        <Image
+          src={headerTheme.logoImage}
+          alt={logoText || "Logo"}
+          width={120}
+          height={40}
+          className="h-10 w-auto object-contain"
+          priority
+        />
+      ) : (
+        <span aria-live="polite">{siteSettingsLoading ? "กำลังโหลด..." : logoText}</span>
+      )}
+    </Link>
+  );
+
   return (
-    <header 
+    <header
       className="shadow-md sticky top-0 z-50"
-      style={{ backgroundColor: bgColor }}
+      style={{ backgroundColor: colors.background }}
     >
       <div className="max-w-6xl mx-auto flex items-center justify-between p-4">
-        {/* โลโก้ */}
-        <Link 
-          href="/" 
-          onClick={closeMenu}
-          className="text-xl md:text-2xl font-bold hover:text-blue-600 transition-colors"
-          style={{ color: textColor }}
-        >
-          {logoText}
-        </Link>
+        {logo}
 
-        {/* Hamburger Button (Mobile) */}
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="md:hidden flex flex-col items-center justify-center w-10 h-10 space-y-1.5 focus:outline-none"
@@ -98,231 +151,46 @@ export default function Header() {
             className={`block w-6 h-0.5 transition-all duration-300 ${
               isMenuOpen ? "rotate-45 translate-y-2" : ""
             }`}
-            style={{ backgroundColor: textColor }}
+            style={{ backgroundColor: colors.text }}
           ></span>
           <span
             className={`block w-6 h-0.5 transition-all duration-300 ${
               isMenuOpen ? "opacity-0" : ""
             }`}
-            style={{ backgroundColor: textColor }}
+            style={{ backgroundColor: colors.text }}
           ></span>
           <span
             className={`block w-6 h-0.5 transition-all duration-300 ${
               isMenuOpen ? "-rotate-45 -translate-y-2" : ""
             }`}
-            style={{ backgroundColor: textColor }}
+            style={{ backgroundColor: colors.text }}
           ></span>
         </button>
 
-        {/* เมนู Desktop */}
         <nav className="hidden md:block">
-          <ul className="flex space-x-6 font-medium" style={{ color: textColor }}>
-            {pathname === "/" ? (
-              // ถ้าอยู่หน้าแรก แสดง section links
-              <>
-                <li>
-                  <button
-                    onClick={(e) => scrollToSection("", e)}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    หน้าแรก
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("about")}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    เกี่ยวกับฉัน
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("portfolio")}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    ผลงาน
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("contact")}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    ติดต่อ
-                  </button>
-                </li>
-              </>
-            ) : pathname === "/Contact" ? (
-              // ถ้าอยู่หน้า Contact
-              <>
-                <li>
-                  <Link
-                    href="/"
-                    className="hover:text-blue-600 transition-colors duration-300"
-                  >
-                    หน้าแรก
-                  </Link>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("contact")}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    ติดต่อ
-                  </button>
-                </li>
-              </>
-            ) : (
-              // หน้าอื่นๆ
-              <>
-                <li>
-                  <Link
-                    href="/"
-                    className="hover:text-blue-600 transition-colors duration-300"
-                  >
-                    หน้าแรก
-                  </Link>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("about")}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    เกี่ยวกับฉัน
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("portfolio")}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    ผลงาน
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("contact")}
-                    className="hover:text-blue-600 transition-colors duration-300 cursor-pointer"
-                  >
-                    ติดต่อ
-                  </button>
-                </li>
-              </>
-            )}
+          <ul className="flex items-center space-x-6 font-medium" style={{ color: colors.text }}>
+            {navLinks.map((link) => (
+              <li key={`desktop-${link.label}`}>{renderNavButton(link, "desktop")}</li>
+            ))}
           </ul>
         </nav>
 
-        {/* เมนู Mobile */}
         <nav
           className={`md:hidden absolute top-full left-0 right-0 shadow-lg transition-all duration-300 ease-in-out ${
-            isMenuOpen
-              ? "max-h-screen opacity-100"
-              : "max-h-0 opacity-0 overflow-hidden"
+            isMenuOpen ? "max-h-screen opacity-100" : "max-h-0 opacity-0 overflow-hidden"
           }`}
-          style={{ backgroundColor: bgColor }}
+          style={{ backgroundColor: colors.background }}
         >
-          <ul className="flex flex-col font-medium" style={{ color: textColor }}>
-            {pathname === "/" ? (
-              // ถ้าอยู่หน้าแรก แสดง section links
-              <>
-                <li className="border-b border-gray-100">
-                  <button
-                    onClick={(e) => scrollToSection("", e)}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    หน้าแรก
-                  </button>
-                </li>
-                <li className="border-b border-gray-100">
-                  <button
-                    onClick={() => scrollToSection("about")}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    เกี่ยวกับฉัน
-                  </button>
-                </li>
-                <li className="border-b border-gray-100">
-                  <button
-                    onClick={() => scrollToSection("portfolio")}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    ผลงาน
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("contact")}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    ติดต่อ
-                  </button>
-                </li>
-              </>
-            ) : pathname === "/Contact" ? (
-              // ถ้าอยู่หน้า Contact
-              <>
-                <li className="border-b border-gray-100">
-                  <Link
-                    href="/"
-                    onClick={closeMenu}
-                    className="block w-full px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    หน้าแรก
-                  </Link>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("contact")}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    ติดต่อ
-                  </button>
-                </li>
-              </>
-            ) : (
-              // หน้าอื่นๆ
-              <>
-                <li className="border-b border-gray-100">
-                  <Link
-                    href="/"
-                    onClick={closeMenu}
-                    className="block w-full px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    หน้าแรก
-                  </Link>
-                </li>
-                <li className="border-b border-gray-100">
-                  <button
-                    onClick={() => scrollToSection("about")}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    เกี่ยวกับฉัน
-                  </button>
-                </li>
-                <li className="border-b border-gray-100">
-                  <button
-                    onClick={() => scrollToSection("portfolio")}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    ผลงาน
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => scrollToSection("contact")}
-                    className="w-full text-left px-6 py-4 hover:bg-blue-50 hover:text-blue-600 transition-colors duration-300"
-                  >
-                    ติดต่อ
-                  </button>
-                </li>
-              </>
-            )}
+          <ul className="flex flex-col font-medium" style={{ color: colors.text }}>
+            {navLinks.map((link) => (
+              <li key={`mobile-${link.label}`} className="border-b border-gray-100 last:border-b-0">
+                {renderNavButton(link, "mobile")}
+              </li>
+            ))}
           </ul>
         </nav>
       </div>
 
-      {/* Overlay เมื่อเปิดเมนูบนมือถือ */}
       {isMenuOpen && (
         <div
           onClick={closeMenu}

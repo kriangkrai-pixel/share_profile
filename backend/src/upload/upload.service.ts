@@ -11,7 +11,14 @@ export class UploadService {
     }
 
     // ตรวจสอบประเภทไฟล์
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    const allowedTypes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/svg+xml',
+    ];
     if (!allowedTypes.includes(file.mimetype)) {
       throw new BadRequestException('Invalid file type. Only images are allowed.');
     }

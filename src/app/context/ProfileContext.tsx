@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
 
 interface ProfileData {
   name: string;
@@ -99,53 +99,114 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   // ฟังก์ชันสำหรับโหลดข้อมูลจาก API
   const fetchProfile = async () => {
-    try {
-      const response = await fetch(API_ENDPOINTS.PROFILE, {
-        credentials: "include",
-        cache: "no-store",
-      });
-      const data = await response.json();
-      
-      if (response.ok && !data.error) {
-        setProfile(data);
-        // เก็บข้อมูลใน localStorage เป็น backup
-        localStorage.setItem("profileData", JSON.stringify(data));
-      } else {
-        // ถ้า API ไม่ทำงาน ให้ใช้ข้อมูลจาก localStorage เป็น fallback
-        const saved = localStorage.getItem("profileData");
-        if (saved) {
-          try {
-            const parsedData = JSON.parse(saved);
-            setProfile(parsedData);
-          } catch (e) {
-            console.error("Failed to load profile data from localStorage:", e);
-          }
+    console.log("📥 Fetching profile data from API...");
+
+    const maxRetries = 3;
+    let attempt = 0;
+
+    while (attempt <= maxRetries) {
+      try {
+        const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+          method: "GET",
+          cache: "no-store",
+        });
+        
+        console.log("📥 Fetch response status:", response.status, response.ok);
+        
+        if (response.status === 429) {
+          attempt += 1;
+          const retryAfterHeader = response.headers.get("Retry-After");
+          const retryAfterSeconds = retryAfterHeader ? parseFloat(retryAfterHeader) : NaN;
+          const waitMs = !Number.isNaN(retryAfterSeconds)
+            ? retryAfterSeconds * 1000
+            : 500 * attempt;
+          console.warn(`⚠️ Received 429 (attempt ${attempt}/${maxRetries}). Retrying in ${waitMs}ms`);
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log("📥 Fetch response data:", data ? "received" : "null", data?.error ? "has error" : "no error");
+        
+        // ตรวจสอบว่าเป็น error object หรือไม่ และมีข้อมูลที่จำเป็นหรือไม่
+        if (!data.error && data.name !== undefined) {
+          console.log("✅ Setting profile state with fresh data from API");
+          setProfile(data);
+          // เก็บข้อมูลใน localStorage เป็น backup
+          localStorage.setItem("profileData", JSON.stringify(data));
+          console.log("✅ Profile state updated successfully");
         } else {
-          // ถ้าไม่มีข้อมูลใน localStorage ใช้ default
-          localStorage.setItem("profileData", JSON.stringify(defaultProfile));
+          console.warn("⚠️ API response has error or missing data, using localStorage fallback");
+          // ถ้า API ไม่ทำงาน ให้ใช้ข้อมูลจาก localStorage เป็น fallback
+          const saved = localStorage.getItem("profileData");
+          if (saved) {
+            try {
+              const parsedData = JSON.parse(saved);
+              console.log("📦 Using cached profile data from localStorage");
+              setProfile(parsedData);
+            } catch (e) {
+              console.error("❌ Failed to load profile data from localStorage:", e);
+              setProfile(defaultProfile);
+            }
+          } else {
+            // ถ้าไม่มีข้อมูลใน localStorage ใช้ default
+            console.log("📦 Using default profile data");
+            localStorage.setItem("profileData", JSON.stringify(defaultProfile));
+            setProfile(defaultProfile);
+          }
         }
-      }
-    } catch (error: any) {
-      console.error("Error fetching profile:", error);
-      // Fallback to localStorage
-      const saved = localStorage.getItem("profileData");
-      if (saved) {
-        try {
-          const parsedData = JSON.parse(saved);
-          setProfile(parsedData);
-        } catch (e) {
-          console.error("Failed to load profile data from localStorage:", e);
-          // ใช้ default profile ถ้า localStorage ก็เสีย
-          setProfile(defaultProfile);
+
+        setLoading(false);
+        return;
+      } catch (error: any) {
+        // Handle connection errors gracefully without logging as errors
+        if (isConnectionError(error)) {
+          // Connection errors are expected when backend is down - use fallback silently
+          if (process.env.NODE_ENV === 'development') {
+            console.warn("⚠️ Backend connection failed. Using cached profile data.");
+          }
+          break;
         }
-      } else {
-        // ใช้ default profile
-        setProfile(defaultProfile);
-        localStorage.setItem("profileData", JSON.stringify(defaultProfile));
+
+        // ถ้าเกิด error อย่างอื่น และยังเหลือ retry ให้ลองใหม่
+        if (attempt < maxRetries) {
+          attempt += 1;
+          console.warn(`⚠️ Fetch profile failed (attempt ${attempt}/${maxRetries}). Retrying...`, error);
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+          continue;
+        }
+
+        console.error("❌ Error fetching profile:", error);
+        break;
+      } finally {
+        // จะออกหลัง return หรือ break ซึ่ง setLoading=false จะ set ภายหลัง loop (ด้านล่าง)
       }
-    } finally {
-      setLoading(false);
     }
+
+    // Fallback to localStorage
+    const saved = localStorage.getItem("profileData");
+    if (saved) {
+      try {
+        const parsedData = JSON.parse(saved);
+        console.log("📦 Using cached profile data from localStorage (error fallback)");
+        setProfile(parsedData);
+      } catch (e) {
+        console.error("❌ Failed to load profile data from localStorage:", e);
+        // ใช้ default profile ถ้า localStorage ก็เสีย
+        setProfile(defaultProfile);
+      }
+    } else {
+      // ใช้ default profile
+      console.log("📦 Using default profile data (no cache)");
+      setProfile(defaultProfile);
+      localStorage.setItem("profileData", JSON.stringify(defaultProfile));
+    }
+
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -178,79 +239,161 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateProfile = async (data: Partial<ProfileData>) => {
+    console.log("🔄 Starting profile update with data:", Object.keys(data));
     try {
       // อัปเดตข้อมูลหลัก
       if (data.name || data.email || data.phone || data.location || data.description || data.bio || data.achievement || data.heroImage !== undefined || data.contactImage !== undefined) {
-        await fetch(API_ENDPOINTS.PROFILE, {
+        // เตรียมข้อมูลที่จะส่งไป API โดยกรอง undefined และ empty string ที่ไม่จำเป็น
+        const updatePayload: any = {};
+        if (data.name !== undefined) updatePayload.name = data.name || '';
+        if (data.email !== undefined) updatePayload.email = data.email || '';
+        if (data.phone !== undefined) updatePayload.phone = data.phone || '';
+        if (data.location !== undefined) updatePayload.location = data.location || '';
+        if (data.description !== undefined) updatePayload.description = data.description || '';
+        if (data.bio !== undefined) updatePayload.bio = data.bio || '';
+        if (data.achievement !== undefined) updatePayload.achievement = data.achievement || '';
+        // สำหรับ heroImage และ contactImage: ส่งเฉพาะเมื่อมีค่า (ไม่ใช่ empty string)
+        if (data.heroImage !== undefined) {
+          updatePayload.heroImage = (data.heroImage && data.heroImage.trim()) ? data.heroImage : null;
+        }
+        if (data.contactImage !== undefined) {
+          updatePayload.contactImage = (data.contactImage && data.contactImage.trim()) ? data.contactImage : null;
+        }
+
+        console.log("📤 Sending profile update request:", Object.keys(updatePayload));
+        const response = await apiRequest(API_ENDPOINTS.PROFILE, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            name: data.name,
-            email: data.email,
-            phone: data.phone,
-            location: data.location,
-            description: data.description,
-            bio: data.bio,
-            achievement: data.achievement,
-            heroImage: data.heroImage,
-            contactImage: data.contactImage,
-          }),
+          body: JSON.stringify(updatePayload),
         });
+        if (!response.ok) {
+          // พยายามดึง error message จาก response
+          let errorMessage = `Failed to update profile: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            if (errorData.message) {
+              if (Array.isArray(errorData.message)) {
+                errorMessage = errorData.message.join(', ');
+              } else {
+                errorMessage = errorData.message;
+              }
+            }
+          } catch (e) {
+            // ถ้า parse JSON ไม่ได้ ให้ใช้ error message เริ่มต้น
+          }
+          console.error("❌ Profile update failed:", errorMessage);
+          throw new Error(errorMessage);
+        }
+        console.log("✅ Profile update successful");
       }
 
       // อัปเดตทักษะ
       if (data.skills) {
-        await fetch(API_ENDPOINTS.SKILLS, {
+        console.log("📤 Updating skills:", data.skills.length, "items");
+        const response = await apiRequest(API_ENDPOINTS.SKILLS, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({ skills: data.skills }),
         });
+        if (!response.ok) {
+          console.error("❌ Skills update failed:", response.status);
+          throw new Error(`Failed to update skills: ${response.status}`);
+        }
+        console.log("✅ Skills update successful");
       }
 
       // อัปเดตการศึกษา
       if (data.education) {
-        await fetch(API_ENDPOINTS.EDUCATION, {
+        console.log("📤 Updating education");
+        const response = await apiRequest(API_ENDPOINTS.EDUCATION, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({ education: data.education }),
         });
+        if (!response.ok) {
+          console.error("❌ Education update failed:", response.status);
+          throw new Error(`Failed to update education: ${response.status}`);
+        }
+        console.log("✅ Education update successful");
       }
 
       // Refresh ข้อมูลจาก API เพื่อให้แน่ใจว่าข้อมูลตรงกับ database
-      const response = await fetch(API_ENDPOINTS.PROFILE, {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (response.ok) {
-        const updatedData = await response.json();
-        if (!updatedData.error) {
-          setProfile(updatedData);
-          localStorage.setItem("profileData", JSON.stringify(updatedData));
-          // Dispatch custom event เพื่อแจ้งให้หน้าอื่นรู้ว่ามีการอัปเดต
-          window.dispatchEvent(new Event("profileUpdated"));
-          return;
+      // ใช้ fetchProfile() โดยตรงเพื่อให้แน่ใจว่าข้อมูลถูกอัปเดต
+      console.log("🔄 Refreshing profile data from API...");
+      
+      let refreshSuccess = false;
+      let retryCount = 0;
+      const maxRetries = 2;
+      
+      while (!refreshSuccess && retryCount <= maxRetries) {
+        try {
+          const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+            method: "GET",
+            cache: "no-store",
+          });
+          console.log(`📥 Refresh attempt ${retryCount + 1} - response status:`, response.status, response.ok);
+          
+          if (response.ok) {
+            const updatedData = await response.json();
+            console.log("📥 Refresh response data:", updatedData ? "received" : "null", updatedData?.error ? "has error" : "no error");
+            
+            // ตรวจสอบว่าเป็น error object หรือไม่
+            if (updatedData && !updatedData.error && updatedData.name !== undefined) {
+              console.log("✅ Updating profile state with fresh data from API");
+              setProfile(updatedData);
+              localStorage.setItem("profileData", JSON.stringify(updatedData));
+              // Dispatch custom event เพื่อแจ้งให้หน้าอื่นรู้ว่ามีการอัปเดต
+              window.dispatchEvent(new Event("profileUpdated"));
+              console.log("✅ Profile state updated successfully");
+              refreshSuccess = true;
+              return;
+            } else {
+              console.warn("⚠️ Refresh response invalid:", updatedData?.error || "missing required fields");
+            }
+          } else {
+            console.warn(`⚠️ Refresh attempt ${retryCount + 1} failed with status:`, response.status);
+          }
+        } catch (refreshError) {
+          console.warn(`⚠️ Refresh attempt ${retryCount + 1} error:`, refreshError);
+        }
+        
+        retryCount++;
+        if (!refreshSuccess && retryCount <= maxRetries) {
+          console.log(`🔄 Retrying refresh (${retryCount}/${maxRetries})...`);
+          // รอสักครู่ก่อน retry
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
 
-      // ถ้า refresh ไม่สำเร็จ ให้อัปเดต state ทันที
+      // ถ้า refresh ไม่สำเร็จ ให้อัปเดต state ทันทีด้วยข้อมูลที่ส่งมา
+      console.log("⚠️ Refresh failed after retries, updating state with provided data");
       setProfile((prev) => {
         const updated = { ...prev, ...data };
         localStorage.setItem("profileData", JSON.stringify(updated));
         window.dispatchEvent(new Event("profileUpdated"));
+        console.log("✅ Profile state updated with provided data (fallback)");
         return updated;
       });
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      // อัปเดต state แม้ว่า API จะล้มเหลว
+    } catch (error: any) {
+      console.error("❌ Error updating profile:", error);
+      
+      // ถ้าเป็น validation error (400) ให้แสดง error message ที่ชัดเจน
+      if (error?.message?.includes("Failed to update profile: 400")) {
+        // ไม่ throw error อีกครั้ง แต่ให้อัปเดต state เพื่อเก็บข้อมูลไว้
+        // และให้ caller จัดการ error message เอง
+        console.warn("⚠️ Validation error occurred, but keeping local state updated");
+      }
+      
+      // อัปเดต state แม้ว่า API จะล้มเหลว เพื่อให้ข้อมูลไม่หายไป
+      // แต่จะ throw error ต่อไปเพื่อให้ caller รู้ว่ามีปัญหา
+      console.log("🔄 Updating state with provided data despite error (fallback)");
       setProfile((prev) => {
         const updated = { ...prev, ...data };
         localStorage.setItem("profileData", JSON.stringify(updated));
         window.dispatchEvent(new Event("profileUpdated"));
+        console.log("✅ Profile state updated with provided data (error fallback)");
         return updated;
       });
+      
+      // Throw error ต่อไปเพื่อให้ caller รู้ว่ามีปัญหา
+      throw error;
     }
   };
 
@@ -260,16 +403,17 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   const updatePortfolio = async (portfolio: ProfileData["portfolio"]) => {
     try {
-      await fetch(API_ENDPOINTS.PORTFOLIO, {
+      const portfolioResponse = await apiRequest(API_ENDPOINTS.PORTFOLIO, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ portfolios: portfolio }),
       });
+      if (!portfolioResponse.ok) {
+        throw new Error(`Failed to update portfolio: ${portfolioResponse.status}`);
+      }
 
       // Refresh ข้อมูลจาก API เพื่อให้แน่ใจว่าข้อมูลตรงกับ database
-      const response = await fetch(API_ENDPOINTS.PROFILE, {
-        credentials: "include",
+      const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+        method: "GET",
       });
       if (response.ok) {
         const updatedData = await response.json();
@@ -298,16 +442,17 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   const updateExperience = async (experience: ProfileData["experience"]) => {
     try {
-      await fetch(API_ENDPOINTS.EXPERIENCE, {
+      const experienceResponse = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ experiences: experience }),
       });
+      if (!experienceResponse.ok) {
+        throw new Error(`Failed to update experience: ${experienceResponse.status}`);
+      }
 
       // Refresh ข้อมูลจาก API เพื่อให้แน่ใจว่าข้อมูลตรงกับ database
-      const response = await fetch(API_ENDPOINTS.PROFILE, {
-        credentials: "include",
+      const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+        method: "GET",
       });
       if (response.ok) {
         const updatedData = await response.json();

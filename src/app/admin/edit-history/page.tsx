@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 interface EditHistoryItem {
   id: number;
@@ -25,6 +27,8 @@ export default function EditHistoryPage() {
   const [filter, setFilter] = useState<string>("all");
   const [selectedHistory, setSelectedHistory] = useState<EditHistoryItem | null>(null);
   const [displayLimit, setDisplayLimit] = useState<number>(20); // แสดง 20 รายการแรก
+  const [username, setUsername] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
@@ -33,19 +37,44 @@ export default function EditHistoryPage() {
     } else {
       setAuthenticated(true);
       setLoading(false);
+      const currentUsername = getUsernameFromToken();
+      setUsername(currentUsername);
       fetchHistory();
     }
   }, [router, filter]);
 
   const fetchHistory = async () => {
     try {
+      setError(null);
       const url = filter === "all"
         ? API_ENDPOINTS.EDIT_HISTORY
         : `${API_ENDPOINTS.EDIT_HISTORY}?page=${filter}`;
-      const response = await fetch(url, {
-        credentials: "include",
+      const response = await apiRequest(url, {
+        method: "GET",
+        cache: "no-store",
       });
+
+      // ตรวจสอบว่า response สำเร็จหรือไม่
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "เกิดข้อผิดพลาดในการโหลดข้อมูล" }));
+        setError(errorData.message || `เกิดข้อผิดพลาด (${response.status})`);
+        setHistory([]);
+        setSelectedHistory(null);
+        return;
+      }
+
       const data = await response.json();
+
+      // ตรวจสอบว่า data เป็น array หรือไม่
+      if (!Array.isArray(data)) {
+        console.error("API response is not an array:", data);
+        setError("รูปแบบข้อมูลไม่ถูกต้อง");
+        setHistory([]);
+        setSelectedHistory(null);
+        return;
+      }
+
+      // ตั้งค่า history และ selectedHistory
       setHistory(data);
       if (data && data.length > 0) {
         setSelectedHistory(data[0]);
@@ -54,6 +83,9 @@ export default function EditHistoryPage() {
       }
     } catch (error) {
       console.error("Error fetching history:", error);
+      setError("ไม่สามารถโหลดประวัติการแก้ไขได้ กรุณาลองใหม่อีกครั้ง");
+      setHistory([]);
+      setSelectedHistory(null);
     }
   };
 
@@ -156,9 +188,18 @@ export default function EditHistoryPage() {
               </h1>
               <p className="text-xs text-gray-600 mt-1">ดูประวัติการเปลี่ยนแปลงข้อมูลทั้งหมด</p>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-600">รายการทั้งหมด</p>
-              <p className="text-2xl font-bold text-blue-600">{history.length}</p>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm text-gray-600">รายการทั้งหมด</p>
+                <p className="text-2xl font-bold text-blue-600">{history.length}</p>
+              </div>
+              <Link
+                href={username ? `/${username}` : "/"}
+                target="_blank"
+                className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
+              >
+                🌐 ดูหน้าเว็บ
+              </Link>
             </div>
           </div>
         </div>
@@ -233,7 +274,19 @@ export default function EditHistoryPage() {
 
         {/* History List */}
         <div className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-xl overflow-hidden border-2 border-blue-100">
-          {history.length === 0 ? (
+          {error ? (
+            <div className="p-12 text-center">
+              <div className="text-6xl mb-4">⚠️</div>
+              <p className="text-red-600 text-lg font-medium mb-2">เกิดข้อผิดพลาด</p>
+              <p className="text-gray-600 text-sm">{error}</p>
+              <button
+                onClick={() => fetchHistory()}
+                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-all"
+              >
+                ลองใหม่อีกครั้ง
+              </button>
+            </div>
+          ) : history.length === 0 ? (
             <div className="p-12 text-center">
               <div className="text-6xl mb-4">📝</div>
               <p className="text-gray-500 text-lg font-medium">ยังไม่มีประวัติการแก้ไข</p>

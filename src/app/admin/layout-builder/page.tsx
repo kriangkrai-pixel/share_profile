@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 interface WidgetStyle {
   backgroundColor?: string;
@@ -47,22 +48,47 @@ export default function LayoutBuilder() {
   const [selectedWidget, setSelectedWidget] = useState<Widget | null>(null);
   const [showStyleEditor, setShowStyleEditor] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
 
   // State สำหรับ Upload รูปภาพ
   const [uploadingImage, setUploadingImage] = useState(false);
 
   // โหลดข้อมูล Layout
   useEffect(() => {
+    const currentUsername = getUsernameFromToken();
+    setUsername(currentUsername);
     loadLayout();
   }, []);
 
   const loadLayout = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_ENDPOINTS.LAYOUT}?includeHidden=true`, {
-        credentials: "include",
+      const response = await apiRequest(`${API_ENDPOINTS.LAYOUT}?includeHidden=true`, {
+        method: "GET",
         cache: "no-store",
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.error(`❌ Failed to load layout: ${response.status} ${response.statusText}`, errorText);
+
+        if (response.status === 429) {
+          try {
+            const parsed = JSON.parse(errorText);
+            const retryAfter = Number(parsed?.retryAfter ?? 15);
+            showMessage("error", parsed?.message || "จำนวนคำขอเกินจำกัด กรุณาลองใหม่");
+            if (Number.isFinite(retryAfter) && retryAfter > 0) {
+              setTimeout(loadLayout, retryAfter * 1000);
+            }
+          } catch {
+            showMessage("error", "จำนวนคำขอเกินจำกัด กรุณาลองใหม่");
+          }
+        } else {
+          showMessage("error", "ไม่สามารถโหลดข้อมูลได้");
+        }
+        return;
+      }
+      
       const data = await response.json();
 
       if (data && !data.error) {
@@ -73,7 +99,11 @@ export default function LayoutBuilder() {
       }
     } catch (error) {
       console.error("Error loading layout:", error);
-      showMessage("error", "ไม่สามารถโหลดข้อมูลได้");
+      if (isConnectionError(error)) {
+        showMessage("error", "ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้");
+      } else {
+        showMessage("error", "ไม่สามารถโหลดข้อมูลได้");
+      }
     } finally {
       setLoading(false);
     }
@@ -88,10 +118,8 @@ export default function LayoutBuilder() {
 
       // บันทึก widgets ทั้งหมด
       for (const widget of widgets) {
-        await fetch(API_ENDPOINTS.WIDGETS, {
+        const response = await apiRequest(API_ENDPOINTS.WIDGETS, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({
             id: widget.id,
             title: widget.title,
@@ -102,19 +130,27 @@ export default function LayoutBuilder() {
             settings: widget.settings,
           }),
         });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "Unknown error");
+          console.error(`❌ Failed to update widget ${widget.id}: ${response.status}`, errorText);
+        }
       }
 
       // Log การแก้ไข
-      await fetch(API_ENDPOINTS.EDIT_HISTORY, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          action: "update",
-          section: "layout",
-          details: `อัปเดต Layout: ${layout.name}`,
-        }),
-      });
+      try {
+        await apiRequest(API_ENDPOINTS.EDIT_HISTORY, {
+          method: "POST",
+          body: JSON.stringify({
+            action: "update",
+            section: "layout",
+            details: `อัปเดต Layout: ${layout.name}`,
+          }),
+        });
+      } catch (error) {
+        // Log error but don't block save
+        console.warn("Failed to log edit history:", error);
+      }
 
       showMessage("success", "✅ บันทึกสำเร็จ!");
       await loadLayout(); // โหลดใหม่
@@ -289,9 +325,8 @@ export default function LayoutBuilder() {
             : API_ENDPOINTS.UPLOAD_WIDGET;
 
           // อัปโหลดไปยัง backend โดยใช้ endpoint สำหรับ widget
-          const response = await fetch(uploadUrl, {
+          const response = await apiRequest(uploadUrl, {
             method: "POST",
-            credentials: "include",
             body: formData,
           });
 
@@ -483,11 +518,11 @@ export default function LayoutBuilder() {
 
             <div className="flex items-center gap-3">
               <Link
-                href="/"
+                href={username ? `/${username}` : "/"}
                 target="_blank"
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
               >
-                👁️ ดูตัวอย่าง
+                🌐 ดูหน้าเว็บ
               </Link>
               <button
                 onClick={handleSaveAll}

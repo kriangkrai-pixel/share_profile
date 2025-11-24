@@ -5,8 +5,11 @@ import { PrismaService } from '../prisma/prisma.service';
 export class EditHistoryService {
   constructor(private prisma: PrismaService) {}
 
-  async getHistory(page?: string, limit?: number) {
-    const where = page ? { page } : {};
+  async getHistory(userId: number, page?: string, limit?: number) {
+    const where: any = { userId };
+    if (page) {
+      where.page = page;
+    }
 
     const history = await this.prisma.editHistory.findMany({
       where,
@@ -17,7 +20,7 @@ export class EditHistoryService {
     return history;
   }
 
-  async createHistory(data: any) {
+  async createHistory(userId: number, data: any) {
     const { page, section, action, oldValue, newValue, itemId } = data;
 
     if (!page || !action) {
@@ -26,6 +29,7 @@ export class EditHistoryService {
 
     const history = await this.prisma.editHistory.create({
       data: {
+        userId,
         page,
         section: section || null,
         action,

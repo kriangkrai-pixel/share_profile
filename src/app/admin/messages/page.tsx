@@ -23,7 +23,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 interface ContactMessage {
   id: number;
@@ -45,6 +46,7 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
   const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
@@ -52,6 +54,8 @@ export default function MessagesPage() {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
+      const currentUsername = getUsernameFromToken();
+      setUsername(currentUsername);
       loadMessages();
     }
   }, [router]);
@@ -61,13 +65,26 @@ export default function MessagesPage() {
    */
   const loadMessages = async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.CONTACT, {
-        credentials: "include",
+      const response = await apiRequest(API_ENDPOINTS.CONTACT, {
+        method: "GET",
+        cache: "no-store",
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.warn(`⚠️ Failed to load messages: ${response.status} ${response.statusText}`, errorText);
+        setMessages([]);
+        return;
+      }
+      
       const data = await response.json();
       setMessages(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error loading messages:", error);
+      if (isConnectionError(error)) {
+        console.warn("⚠️ Backend may not be running.");
+      }
+      setMessages([]);
     } finally {
       setLoading(false);
     }
@@ -91,10 +108,8 @@ export default function MessagesPage() {
    */
   const handleMarkAsRead = async (id: number, currentStatus: boolean) => {
     try {
-      const response = await fetch(API_ENDPOINTS.CONTACT, {
+      const response = await apiRequest(API_ENDPOINTS.CONTACT, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ id, isRead: !currentStatus }),
       });
 
@@ -103,9 +118,15 @@ export default function MessagesPage() {
         if (selectedMessage?.id === id) {
           setSelectedMessage({ ...selectedMessage, isRead: !currentStatus });
         }
+      } else {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.error(`❌ Failed to update message: ${response.status} ${response.statusText}`, errorText);
       }
     } catch (error) {
       console.error("Error updating message:", error);
+      if (isConnectionError(error)) {
+        alert("ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง");
+      }
     }
   };
 
@@ -116,9 +137,8 @@ export default function MessagesPage() {
     if (!confirm(`คุณต้องการลบข้อความจาก "${name}" หรือไม่?`)) return;
 
     try {
-      const response = await fetch(`${API_ENDPOINTS.CONTACT}?id=${id}`, {
+      const response = await apiRequest(`${API_ENDPOINTS.CONTACT}?id=${id}`, {
         method: "DELETE",
-        credentials: "include",
       });
 
       if (response.ok) {
@@ -206,7 +226,7 @@ export default function MessagesPage() {
             </div>
 
             <Link
-              href="/"
+              href={username ? `/${username}` : "/"}
               target="_blank"
               className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
             >

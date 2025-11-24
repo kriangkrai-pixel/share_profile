@@ -10,31 +10,128 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
+import type { HeaderMenuLink, HeaderCta, FooterLink } from "../../context/SiteSettingsContext";
 
-interface HeaderFooterSettings {
+type EditableLink = (HeaderMenuLink | FooterLink) & { id: string };
+
+interface HeaderFooterSettingsForm {
   headerLogoText: string;
-  headerMenuItems: string | null;
   headerBgColor: string;
+  headerTextColor: string;
+  headerLinks: EditableLink[];
+  headerCta: HeaderCta;
   footerLogoText: string;
   footerDescription: string;
   footerEmail: string;
   footerLocation: string;
-  footerLinks: string | null;
+  footerPhone: string;
   footerBgColor: string;
+  footerTextColor: string;
+  footerLinks: EditableLink[];
+  footerShowLocation: boolean;
+  footerShowEmail: boolean;
+  footerShowPhone: boolean;
 }
 
-const defaultSettings: HeaderFooterSettings = {
-  headerLogoText: "KRIANGKRAI.P",
-  headerMenuItems: null,
-  headerBgColor: "#ffffff",
-  footerLogoText: "KRIANGKRAI.P",
-  footerDescription: "พัฒนาและเรียนรู้เทคโนโลยีใหม่ ๆ อย่างต่อเนื่อง",
-  footerEmail: "kik550123@gmail.com",
-  footerLocation: "ภูเก็ต, Thailand",
-  footerLinks: null,
-  footerBgColor: "#1f2937",
+const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+const DEFAULT_HEADER_LINKS: HeaderMenuLink[] = [
+  { label: "หน้าแรก", href: "/#hero" },
+  { label: "เกี่ยวกับฉัน", href: "/#about" },
+  { label: "ทักษะ", href: "/#skills" },
+  { label: "ผลงาน", href: "/#portfolio" },
+  { label: "ติดต่อ", href: "/#contact" },
+];
+
+const DEFAULT_HEADER_CTA: HeaderCta = {
+  label: "จ้างงานเลย",
+  href: "/contact",
+  enabled: true,
 };
+
+const DEFAULT_FOOTER_LINKS: FooterLink[] = [
+  { label: "งานทั้งหมด", href: "/#portfolio" },
+  { label: "ประสบการณ์", href: "/#experience" },
+  { label: "ติดต่อ", href: "/#contact" },
+];
+
+const FOOTER_PRESET_LINKS: FooterLink[] = [
+  { label: "งานทั้งหมด", href: "/#portfolio" },
+  { label: "ประสบการณ์", href: "/#experience" },
+  { label: "ทักษะ", href: "/#skills" },
+  { label: "เกี่ยวกับฉัน", href: "/#about" },
+  { label: "ติดต่อ", href: "/#contact" },
+  { label: "หน้าแรก", href: "/#hero" },
+];
+
+const defaultSettings: HeaderFooterSettingsForm = {
+  headerLogoText: "PORTFOLIO.PRO",
+  headerBgColor: "#ffffff",
+  headerTextColor: "#1f2937",
+  headerLinks: DEFAULT_HEADER_LINKS.map((link) => ({ ...link, id: generateId() })),
+  headerCta: { ...DEFAULT_HEADER_CTA },
+  footerLogoText: "PORTFOLIO.PRO",
+  footerDescription: "ช่วยคุณนำเสนอโปรไฟล์และผลงานอย่างมืออาชีพ",
+  footerEmail: "hello@portfolio.pro",
+  footerLocation: "Bangkok, Thailand",
+  footerPhone: "080-000-1234",
+  footerBgColor: "#1f2937",
+  footerTextColor: "#ffffff",
+  footerLinks: DEFAULT_FOOTER_LINKS.map((link) => ({ ...link, id: generateId() })),
+  footerShowLocation: true,
+  footerShowEmail: true,
+  footerShowPhone: true,
+};
+
+const toEditableLinks = (
+  links?: HeaderMenuLink[] | FooterLink[] | null,
+  fallback?: HeaderMenuLink[] | FooterLink[],
+) => {
+  const source = (links && links.length > 0 ? links : fallback) || [];
+  return source.map((link) => ({
+    id: generateId(),
+    label: link.label || "",
+    href: link.href || "",
+    external: Boolean(link.external),
+  }));
+};
+
+const parseHeaderMenu = (value: unknown): { links: HeaderMenuLink[]; cta: HeaderCta } => {
+  let raw = value;
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      raw = null;
+    }
+  }
+
+  const links =
+    (Array.isArray((raw as any)?.links) && (raw as any)?.links.length > 0
+      ? (raw as any).links
+      : DEFAULT_HEADER_LINKS) || DEFAULT_HEADER_LINKS;
+
+  const ctaRaw = (raw as any)?.cta;
+  const cta: HeaderCta = {
+    label: ctaRaw?.label || DEFAULT_HEADER_CTA.label,
+    href: ctaRaw?.href || DEFAULT_HEADER_CTA.href,
+    external: Boolean(ctaRaw?.external),
+    enabled:
+      ctaRaw?.enabled === undefined ? DEFAULT_HEADER_CTA.enabled ?? true : Boolean(ctaRaw.enabled),
+  };
+
+  return { links, cta };
+};
+
+const PRESET_SECTIONS: HeaderMenuLink[] = [
+  { label: "หน้าแรก", href: "/#hero" },
+  { label: "เกี่ยวกับฉัน", href: "/#about" },
+  { label: "ทักษะ", href: "/#skills" },
+  { label: "ผลงาน", href: "/#portfolio" },
+  { label: "ติดต่อ", href: "/#contact" },
+];
 
 export default function HeaderFooterPage() {
   const router = useRouter();
@@ -42,8 +139,9 @@ export default function HeaderFooterPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState<HeaderFooterSettings>(defaultSettings);
+  const [settings, setSettings] = useState<HeaderFooterSettingsForm>(defaultSettings);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("adminToken");
@@ -51,6 +149,8 @@ export default function HeaderFooterPage() {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
+      const currentUsername = getUsernameFromToken();
+      setUsername(currentUsername);
       loadSettings();
     }
   }, [router]);
@@ -60,25 +160,47 @@ export default function HeaderFooterPage() {
    */
   const loadSettings = async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.SETTINGS, {
-        credentials: "include",
+      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+        method: "GET",
+        cache: "no-store",
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.warn(`⚠️ Failed to load settings: ${response.status} ${response.statusText}`, errorText);
+        return;
+      }
+      
       const data = await response.json();
       if (data && !data.error) {
+        const menu = parseHeaderMenu(data.headerMenuItems);
         setSettings({
           headerLogoText: data.headerLogoText || defaultSettings.headerLogoText,
-          headerMenuItems: data.headerMenuItems || null,
           headerBgColor: data.headerBgColor || defaultSettings.headerBgColor,
+          headerTextColor: data.headerTextColor || defaultSettings.headerTextColor,
+          headerLinks: toEditableLinks(menu.links, DEFAULT_HEADER_LINKS),
+          headerCta: menu.cta || { ...DEFAULT_HEADER_CTA },
           footerLogoText: data.footerLogoText || defaultSettings.footerLogoText,
           footerDescription: data.footerDescription || defaultSettings.footerDescription,
           footerEmail: data.footerEmail || defaultSettings.footerEmail,
           footerLocation: data.footerLocation || defaultSettings.footerLocation,
-          footerLinks: data.footerLinks || null,
+      footerPhone: data.footerPhone || defaultSettings.footerPhone,
           footerBgColor: data.footerBgColor || defaultSettings.footerBgColor,
+          footerTextColor: data.footerTextColor || defaultSettings.footerTextColor,
+          footerLinks: toEditableLinks(data.footerLinks, DEFAULT_FOOTER_LINKS),
+      footerShowLocation:
+        data.footerShowLocation === undefined ? defaultSettings.footerShowLocation : Boolean(data.footerShowLocation),
+      footerShowEmail:
+        data.footerShowEmail === undefined ? defaultSettings.footerShowEmail : Boolean(data.footerShowEmail),
+      footerShowPhone:
+        data.footerShowPhone === undefined ? defaultSettings.footerShowPhone : Boolean(data.footerShowPhone),
         });
       }
     } catch (error) {
       console.error("Error loading settings:", error);
+      if (isConnectionError(error)) {
+        console.warn("⚠️ Backend may not be running.");
+      }
     } finally {
       setLoading(false);
     }
@@ -98,11 +220,38 @@ export default function HeaderFooterPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await fetch(API_ENDPOINTS.SETTINGS, {
+      const payload = {
+        headerLogoText: settings.headerLogoText,
+        headerBgColor: settings.headerBgColor,
+        headerTextColor: settings.headerTextColor,
+        headerMenuItems: {
+          links: settings.headerLinks.map(({ id, label, href, external }) => ({
+            label,
+            href,
+            external,
+          })),
+          cta: settings.headerCta,
+        },
+        footerLogoText: settings.footerLogoText,
+        footerDescription: settings.footerDescription,
+        footerEmail: settings.footerEmail,
+        footerLocation: settings.footerLocation,
+    footerPhone: settings.footerPhone,
+        footerBgColor: settings.footerBgColor,
+        footerTextColor: settings.footerTextColor,
+        footerLinks: settings.footerLinks.map(({ id, label, href, external }) => ({
+          label,
+          href,
+          external,
+        })),
+    footerShowLocation: settings.footerShowLocation,
+    footerShowEmail: settings.footerShowEmail,
+    footerShowPhone: settings.footerShowPhone,
+      };
+
+      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(settings),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -118,6 +267,62 @@ export default function HeaderFooterPage() {
       setSaving(false);
     }
   };
+
+  const toggleFooterPresetLink = (preset: FooterLink) => {
+    setSettings((prev) => {
+      const exists = prev.footerLinks.some((link) => link.href === preset.href);
+      if (exists) {
+        return {
+          ...prev,
+          footerLinks: prev.footerLinks.filter((link) => link.href !== preset.href),
+        };
+      }
+
+      const nextLinks = [...prev.footerLinks.filter((link) => link.href !== preset.href), {
+        id: preset.href,
+        label: preset.label,
+        href: preset.href,
+        external: preset.external,
+      }];
+
+      const orderedLinks = FOOTER_PRESET_LINKS.filter((presetLink) =>
+        nextLinks.some((link) => link.href === presetLink.href)
+      ).map((presetLink) => {
+        const match = nextLinks.find((link) => link.href === presetLink.href);
+        return match || { id: presetLink.href, label: presetLink.label, href: presetLink.href };
+      });
+
+      return {
+        ...prev,
+        footerLinks: orderedLinks,
+      };
+    });
+  };
+
+  const isFooterPresetActive = (href: string) =>
+    settings.footerLinks.some((link) => link.href === href);
+
+  const togglePresetLink = (preset: HeaderMenuLink) => {
+    setSettings((prev) => {
+      const exists = prev.headerLinks.some((link) => link.href === preset.href);
+      if (exists) {
+        return {
+          ...prev,
+          headerLinks: prev.headerLinks.filter((link) => link.href !== preset.href),
+        };
+      }
+      return {
+        ...prev,
+        headerLinks: [
+          ...prev.headerLinks,
+          { id: generateId(), label: preset.label, href: preset.href, external: preset.external },
+        ],
+      };
+    });
+  };
+
+  const isPresetActive = (href: string) =>
+    settings.headerLinks.some((link) => link.href === href);
 
   /**
    * Reset เป็นค่าเริ่มต้น
@@ -164,7 +369,7 @@ export default function HeaderFooterPage() {
                 ← กลับ
               </Link>
               <Link
-                href="/"
+                href={username ? `/${username}` : "/"}
                 target="_blank"
                 className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
               >
@@ -199,65 +404,173 @@ export default function HeaderFooterPage() {
               Header Settings
             </h2>
 
-            {/* Logo Text */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                ข้อความโลโก้
-              </label>
-              <input
-                type="text"
-                value={settings.headerLogoText}
-                onChange={(e) =>
-                  setSettings({ ...settings, headerLogoText: e.target.value })
-                }
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="KRIANGKRAI.P"
-              />
-            </div>
-
-            {/* Background Color */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                สีพื้นหลัง Header
-              </label>
-              <div className="flex gap-4">
-                <input
-                  type="color"
-                  value={settings.headerBgColor}
-                  onChange={(e) =>
-                    setSettings({ ...settings, headerBgColor: e.target.value })
-                  }
-                  className="w-20 h-10 border-2 border-gray-300 rounded-lg cursor-pointer"
-                />
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  ข้อความโลโก้
+                </label>
                 <input
                   type="text"
-                  value={settings.headerBgColor}
-                  onChange={(e) =>
-                    setSettings({ ...settings, headerBgColor: e.target.value })
-                  }
-                  className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="#ffffff"
+                  value={settings.headerLogoText}
+                  onChange={(e) => setSettings({ ...settings, headerLogoText: e.target.value })}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="PORTFOLIO.PRO"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  สีพื้นหลัง Header
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input
+                    type="color"
+                    value={settings.headerBgColor}
+                    onChange={(e) => setSettings({ ...settings, headerBgColor: e.target.value })}
+                    className="w-full h-12 border-2 border-gray-300 rounded-lg cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={settings.headerBgColor}
+                    onChange={(e) => setSettings({ ...settings, headerBgColor: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="#ffffff"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  สีตัวอักษร Header
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input
+                    type="color"
+                    value={settings.headerTextColor}
+                    onChange={(e) => setSettings({ ...settings, headerTextColor: e.target.value })}
+                    className="w-full h-12 border-2 border-gray-300 rounded-lg cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={settings.headerTextColor}
+                    onChange={(e) => setSettings({ ...settings, headerTextColor: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="#1f2937"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Preview */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <div className="mt-8">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-gray-700">แสดง/ซ่อนเมนู</label>
+              </div>
+              <p className="text-xs text-gray-500 mb-2">
+                กดปุ่มเพื่อเลือกว่าจะแสดงเมนูใดบ้างใน Header
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {PRESET_SECTIONS.map((section) => {
+                  const active = isPresetActive(section.href);
+                  return (
+                    <button
+                      key={section.href}
+                      type="button"
+                      onClick={() => togglePresetLink(section)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                        active
+                          ? "bg-blue-600 text-white shadow"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {section.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-gray-700">ปุ่ม CTA ใน Header</label>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={settings.headerCta.enabled !== false}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        headerCta: { ...settings.headerCta, enabled: e.target.checked },
+                      })
+                    }
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                  />
+                  แสดงปุ่ม
+                </label>
+              </div>
+              {settings.headerCta.enabled !== false && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input
+                    type="text"
+                    value={settings.headerCta.label}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        headerCta: { ...settings.headerCta, label: e.target.value },
+                      })
+                    }
+                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="จ้างงานเลย"
+                  />
+                  <input
+                    type="text"
+                    value={settings.headerCta.href}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        headerCta: { ...settings.headerCta, href: e.target.value },
+                      })
+                    }
+                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="/contact"
+                  />
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={!!settings.headerCta.external}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          headerCta: { ...settings.headerCta, external: e.target.checked },
+                        })
+                      }
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                    />
+                    เปิดในแท็บใหม่
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-8 p-4 bg-gray-50 rounded-lg">
               <p className="text-xs text-gray-600 font-semibold mb-2">Header Preview:</p>
               <div
-                className="p-4 rounded-lg border-2 border-gray-200"
-                style={{ backgroundColor: settings.headerBgColor }}
+                className="p-4 rounded-lg border-2 border-gray-200 flex flex-col gap-3"
+                style={{ backgroundColor: settings.headerBgColor, color: settings.headerTextColor }}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-xl font-bold text-gray-800">
-                    {settings.headerLogoText || "KRIANGKRAI.P"}
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <span className="text-xl font-bold">
+                    {settings.headerLogoText || "PORTFOLIO.PRO"}
                   </span>
-                  <div className="flex gap-4 text-sm text-gray-700">
-                    <span>หน้าแรก</span>
-                    <span>เกี่ยวกับฉัน</span>
-                    <span>ผลงาน</span>
-                    <span>ติดต่อ</span>
+                  <div className="flex gap-4 text-sm flex-wrap">
+                    {settings.headerLinks.slice(0, 4).map((link) => (
+                      <span key={link.id}>{link.label || "เมนู"}</span>
+                    ))}
                   </div>
+                  {settings.headerCta.enabled !== false && (
+                    <span className="px-4 py-2 rounded-full text-sm font-semibold bg-blue-600 text-white">
+                      {settings.headerCta.label || "CTA"}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -270,107 +583,192 @@ export default function HeaderFooterPage() {
               Footer Settings
             </h2>
 
-            {/* Logo Text */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                ข้อความโลโก้
-              </label>
-              <input
-                type="text"
-                value={settings.footerLogoText}
-                onChange={(e) =>
-                  setSettings({ ...settings, footerLogoText: e.target.value })
-                }
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                placeholder="KRIANGKRAI.P"
-              />
-            </div>
-
-            {/* Description */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                คำอธิบาย
-              </label>
-              <textarea
-                value={settings.footerDescription}
-                onChange={(e) =>
-                  setSettings({ ...settings, footerDescription: e.target.value })
-                }
-                rows={3}
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                placeholder="พัฒนาและเรียนรู้เทคโนโลยีใหม่ ๆ อย่างต่อเนื่อง"
-              />
-            </div>
-
-            {/* Email */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                อีเมล
-              </label>
-              <input
-                type="email"
-                value={settings.footerEmail}
-                onChange={(e) =>
-                  setSettings({ ...settings, footerEmail: e.target.value })
-                }
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                placeholder="kik550123@gmail.com"
-              />
-            </div>
-
-            {/* Location */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                ที่อยู่
-              </label>
-              <input
-                type="text"
-                value={settings.footerLocation}
-                onChange={(e) =>
-                  setSettings({ ...settings, footerLocation: e.target.value })
-                }
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                placeholder="ภูเก็ต, Thailand"
-              />
-            </div>
-
-            {/* Background Color */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                สีพื้นหลัง Footer
-              </label>
-              <div className="flex gap-4">
-                <input
-                  type="color"
-                  value={settings.footerBgColor}
-                  onChange={(e) =>
-                    setSettings({ ...settings, footerBgColor: e.target.value })
-                  }
-                  className="w-20 h-10 border-2 border-gray-300 rounded-lg cursor-pointer"
-                />
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  ข้อความโลโก้
+                </label>
                 <input
                   type="text"
-                  value={settings.footerBgColor}
-                  onChange={(e) =>
-                    setSettings({ ...settings, footerBgColor: e.target.value })
-                  }
-                  className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  placeholder="#1f2937"
+                  value={settings.footerLogoText}
+                  onChange={(e) => setSettings({ ...settings, footerLogoText: e.target.value })}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  placeholder="PORTFOLIO.PRO"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  คำอธิบาย
+                </label>
+                <textarea
+                  value={settings.footerDescription}
+                  onChange={(e) => setSettings({ ...settings, footerDescription: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  placeholder="พัฒนาและเรียนรู้เทคโนโลยีใหม่ ๆ อย่างต่อเนื่อง"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">อีเมล</label>
+                  <input
+                    type="email"
+                    value={settings.footerEmail}
+                    onChange={(e) => setSettings({ ...settings, footerEmail: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="hello@portfolio.pro"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">ที่อยู่</label>
+                  <input
+                    type="text"
+                    value={settings.footerLocation}
+                    onChange={(e) => setSettings({ ...settings, footerLocation: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="Bangkok, Thailand"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">เบอร์โทร</label>
+                  <input
+                    type="tel"
+                    value={settings.footerPhone}
+                    onChange={(e) => setSettings({ ...settings, footerPhone: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="080-000-1234"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={settings.footerShowEmail}
+                    onChange={(e) => setSettings({ ...settings, footerShowEmail: e.target.checked })}
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded"
+                  />
+                  แสดงอีเมล
+                </label>
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={settings.footerShowLocation}
+                    onChange={(e) => setSettings({ ...settings, footerShowLocation: e.target.checked })}
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded"
+                  />
+                  แสดงที่อยู่
+                </label>
+                <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={settings.footerShowPhone}
+                    onChange={(e) => setSettings({ ...settings, footerShowPhone: e.target.checked })}
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded"
+                  />
+                  แสดงเบอร์โทร
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  สีพื้นหลัง Footer
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input
+                    type="color"
+                    value={settings.footerBgColor}
+                    onChange={(e) => setSettings({ ...settings, footerBgColor: e.target.value })}
+                    className="w-full h-12 border-2 border-gray-300 rounded-lg cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={settings.footerBgColor}
+                    onChange={(e) => setSettings({ ...settings, footerBgColor: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="#1f2937"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  สีตัวอักษร Footer
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <input
+                    type="color"
+                    value={settings.footerTextColor}
+                    onChange={(e) => setSettings({ ...settings, footerTextColor: e.target.value })}
+                    className="w-full h-12 border-2 border-gray-300 rounded-lg cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={settings.footerTextColor}
+                    onChange={(e) => setSettings({ ...settings, footerTextColor: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="#ffffff"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Preview */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <div className="mt-8">
+              <label className="text-sm font-semibold text-gray-700">ลิงก์ใน Footer</label>
+              <p className="text-xs text-gray-500 mt-1 mb-3">
+                กดปุ่มเพื่อเลือกว่าจะแสดงเมนูไหนบ้าง (เลือกได้หลายรายการ)
+              </p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {FOOTER_PRESET_LINKS.map((preset) => {
+                  const active = isFooterPresetActive(preset.href);
+                  return (
+                    <button
+                      key={preset.href}
+                      type="button"
+                      onClick={() => toggleFooterPresetLink(preset)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                        active
+                          ? "bg-purple-600 text-white shadow"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4">
+                <p className="text-sm font-semibold text-purple-900 mb-2">ลิงก์ที่จะแสดง</p>
+                {settings.footerLinks.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {settings.footerLinks.map((link) => (
+                      <span
+                        key={link.href}
+                        className="px-3 py-1 rounded-full bg-white text-purple-700 text-sm shadow-sm"
+                      >
+                        {link.label || link.href}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-purple-600">ยังไม่ได้เลือกเมนูใด</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-8 p-4 bg-gray-50 rounded-lg">
               <p className="text-xs text-gray-600 font-semibold mb-2">Footer Preview:</p>
               <div
-                className="p-4 rounded-lg border-2 border-gray-200 text-white"
-                style={{ backgroundColor: settings.footerBgColor }}
+                className="p-4 rounded-lg border-2 border-gray-200"
+                style={{ backgroundColor: settings.footerBgColor, color: settings.footerTextColor }}
               >
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <h3 className="text-xl font-bold mb-2">
-                      {settings.footerLogoText || "KRIANGKRAI.P"}
+                      {settings.footerLogoText || "PORTFOLIO.PRO"}
                     </h3>
                     <p className="text-sm opacity-90">
                       {settings.footerDescription || "คำอธิบาย..."}
@@ -378,21 +776,14 @@ export default function HeaderFooterPage() {
                   </div>
                   <div className="flex md:justify-center">
                     <ul className="space-y-2 text-sm">
-                      <li>
-                        <a href="/" className="hover:underline">หน้าแรก</a>
-                      </li>
-                      <li>
-                        <a href="/Contact" className="hover:underline">ติดต่อ</a>
-                      </li>
+                      {settings.footerLinks.slice(0, 4).map((link) => (
+                        <li key={link.id}>{link.label || "ลิงก์"}</li>
+                      ))}
                     </ul>
                   </div>
-                  <div className="md:text-right text-sm">
-                    <p>
-                      <span className="font-medium">อีเมล:</span> {settings.footerEmail || "email@example.com"}
-                    </p>
-                    <p className="mt-1">
-                      <span className="font-medium">{settings.footerLocation || "Location"}</span>
-                    </p>
+                  <div className="text-sm space-y-1">
+                    <p>อีเมล: {settings.footerEmail || "-"}</p>
+                    <p>ที่อยู่: {settings.footerLocation || "-"}</p>
                   </div>
                 </div>
               </div>

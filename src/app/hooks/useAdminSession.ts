@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
 
 const SESSION_TIMEOUT = 10 * 60 * 1000; // 30 นาที
 const INACTIVITY_CHECK_INTERVAL = 60 * 1000; // ตรวจสอบทุก 1 นาที
@@ -12,13 +12,18 @@ export function useAdminSession() {
 
   const logout = async () => {
     try {
-      await fetch(API_ENDPOINTS.LOGOUT, { 
+      await apiRequest(API_ENDPOINTS.LOGOUT, { 
         method: "POST",
-        credentials: "include"
       });
     } catch (error) {
-      console.error("Logout error:", error);
+      // Log connection errors but don't block logout
+      if (isConnectionError(error)) {
+        console.warn("⚠️ Backend may not be running. Logging out locally.");
+      } else {
+        console.error("Logout error:", error);
+      }
     } finally {
+      localStorage.removeItem("authToken");
       localStorage.removeItem("adminToken");
       localStorage.removeItem("adminLoginTime");
       router.push("/admin/login");
@@ -42,7 +47,7 @@ export function useAdminSession() {
   };
 
   const checkSession = () => {
-    const token = localStorage.getItem("adminToken");
+    const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
     const loginTimeStr = localStorage.getItem("adminLoginTime");
 
     if (!token || !loginTimeStr) {
@@ -60,7 +65,7 @@ export function useAdminSession() {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
+    const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
     
     if (!token) {
       router.push("/admin/login");

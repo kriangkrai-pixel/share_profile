@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useProfile } from "./context/ProfileContext";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 interface WidgetStyle {
   backgroundColor?: string;
@@ -54,6 +55,7 @@ export default function Home() {
   const { profile, refreshProfile } = useProfile();
   const [layout, setLayout] = useState<Layout | null>(null);
   const [loadingLayout, setLoadingLayout] = useState(true);
+  const [loggedInUserName, setLoggedInUserName] = useState<string | null>(null);
   
   // State สำหรับ Theme Settings
   const [theme, setTheme] = useState<ThemeSettings>({
@@ -81,31 +83,56 @@ export default function Home() {
   useEffect(() => {
     const loadLayout = async () => {
       try {
-        const response = await fetch(API_ENDPOINTS.LAYOUT, {
+        console.log("🔄 Loading layout from:", API_ENDPOINTS.LAYOUT);
+        const response = await apiRequest(API_ENDPOINTS.LAYOUT, {
+          method: "GET",
           credentials: "include",
           cache: "no-store",
         });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "Unknown error");
+          console.error(`❌ Failed to load layout: ${response.status} ${response.statusText}`, errorText);
+          setLayout(null);
+          return;
+        }
+        
         const data = await response.json();
+        console.log("✅ Layout loaded:", data);
         
         // ตรวจสอบว่าข้อมูลถูกต้องและมี widgets array
         if (data && !data.error && data.widgets) {
           setLayout(data);
         } else {
-          console.warn("Invalid layout data:", data);
+          console.warn("⚠️ Invalid layout data:", data);
           setLayout(null);
         }
       } catch (error) {
-        console.error("Error loading layout:", error);
+        console.error("❌ Error loading layout:", error);
+        // Check if it's a network error
+        if (error instanceof TypeError && error.message === "Failed to fetch") {
+          console.warn("⚠️ Backend may not be running or CORS issue. Using default layout.");
+        }
         setLayout(null);
       }
     };
 
     const loadTheme = async () => {
       try {
-        const response = await fetch(API_ENDPOINTS.SETTINGS, {
+        console.log("🎨 Loading theme from:", API_ENDPOINTS.SETTINGS);
+        const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+          method: "GET",
           credentials: "include",
           cache: "no-store",
         });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "Unknown error");
+          console.warn(`⚠️ Failed to load theme settings: ${response.status} ${response.statusText}`, errorText);
+          // Keep default theme values
+          return;
+        }
+        
         const data = await response.json();
         if (data && !data.error) {
           setTheme({
@@ -119,7 +146,39 @@ export default function Home() {
           });
         }
       } catch (error) {
-        console.error("Error loading theme:", error);
+        console.error("❌ Error loading theme:", error);
+        // Check if it's a network error
+        if (error instanceof TypeError && error.message === "Failed to fetch") {
+          console.warn("⚠️ Backend may not be running or CORS issue. Using default theme.");
+        }
+        // Keep default theme values on error
+      }
+    };
+
+    // ตรวจสอบว่ามี user ล็อกอินอยู่หรือไม่
+    const loadLoggedInUser = async () => {
+      const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
+      if (token) {
+        // ดึง username จาก token
+        const username = getUsernameFromToken();
+        if (username) {
+          // ถ้ามี token ให้ดึงข้อมูล user จาก API
+          try {
+            const response = await apiRequest(API_ENDPOINTS.CONTENT_ME, {
+              method: "GET",
+              cache: "no-store",
+            });
+            if (response.ok) {
+              const userData = await response.json();
+              if (userData && userData.name) {
+                setLoggedInUserName(userData.name);
+              }
+            }
+          } catch (error) {
+            // ถ้าเรียก API ไม่ได้ ให้ใช้ username จาก token แทน
+            setLoggedInUserName(username);
+          }
+        }
       }
     };
 
@@ -127,7 +186,8 @@ export default function Home() {
     Promise.all([
       loadLayout(),
       loadTheme(),
-      refreshProfile()
+      refreshProfile(),
+      loadLoggedInUser()
     ]).finally(() => {
       setLoadingLayout(false);
     });
@@ -179,29 +239,48 @@ export default function Home() {
       // โหลด Layout ใหม่
       const loadLayout = async () => {
         try {
-          const response = await fetch(API_ENDPOINTS.LAYOUT, {
+          const response = await apiRequest(API_ENDPOINTS.LAYOUT, {
+            method: "GET",
             credentials: "include",
             cache: "no-store",
           });
+          
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "Unknown error");
+            console.warn(`⚠️ Failed to reload layout: ${response.status} ${response.statusText}`, errorText);
+            return;
+          }
+          
           const data = await response.json();
           
           if (data && !data.error && data.widgets) {
             setLayout(data);
           } else {
-            console.warn("Invalid layout data on focus:", data);
+            console.warn("⚠️ Invalid layout data on focus:", data);
           }
         } catch (error) {
-          console.error("Error loading layout:", error);
+          console.error("❌ Error loading layout:", error);
+          if (error instanceof TypeError && error.message === "Failed to fetch") {
+            console.warn("⚠️ Backend may not be running or CORS issue.");
+          }
         }
       };
       
       // โหลด Theme ใหม่
       const loadTheme = async () => {
         try {
-          const response = await fetch(API_ENDPOINTS.SETTINGS, {
+          const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+            method: "GET",
             credentials: "include",
             cache: "no-store",
           });
+          
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "Unknown error");
+            console.warn(`⚠️ Failed to reload theme: ${response.status} ${response.statusText}`, errorText);
+            return;
+          }
+          
           const data = await response.json();
           if (data && !data.error) {
             setTheme({
@@ -215,7 +294,10 @@ export default function Home() {
             });
           }
         } catch (error) {
-          console.error("Error loading theme:", error);
+          console.error("❌ Error loading theme:", error);
+          if (error instanceof TypeError && error.message === "Failed to fetch") {
+            console.warn("⚠️ Backend may not be running or CORS issue.");
+          }
         }
       };
       
@@ -243,10 +325,8 @@ export default function Home() {
     setSubmitting(true);
     
     try {
-      const response = await fetch(API_ENDPOINTS.CONTACT, {
+      const response = await apiRequest(API_ENDPOINTS.CONTACT, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           name: contactForm.name,
           email: contactForm.email,
@@ -276,7 +356,12 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Error sending message:", error);
-      alert("❌ เกิดข้อผิดพลาดในการส่งข้อความ");
+      // Provide user-friendly error message based on error type
+      if (isConnectionError(error)) {
+        alert("❌ ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตและลองใหม่อีกครั้ง");
+      } else {
+        alert("❌ เกิดข้อผิดพลาดในการส่งข้อความ กรุณาลองใหม่อีกครั้ง");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -382,6 +467,35 @@ export default function Home() {
     const style = getWidgetStyle(widget);
     const bgColor = style.backgroundColor || `linear-gradient(to bottom right, ${theme.backgroundColor}, ${theme.primaryColor}15, ${theme.secondaryColor}15)`;
     
+    // อ่านข้อมูลจาก widget settings
+    let welcomeMessage = "ยินดีต้อนรับ";
+    let portfolioButtonText = "ดูผลงาน";
+    let contactButtonText = "ติดต่อฉัน";
+    
+    if (widget.settings) {
+      try {
+        const cleaned = widget.settings
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+          .trim();
+        
+        if (cleaned && (cleaned.startsWith('{') || cleaned.startsWith('['))) {
+          let fixedJson = cleaned
+            .replace(/'/g, '"')
+            .replace(/(\w+):/g, '"$1":');
+          const parsed = JSON.parse(fixedJson);
+          
+          if (typeof parsed === 'object' && parsed !== null) {
+            welcomeMessage = parsed.welcomeMessage || welcomeMessage;
+            portfolioButtonText = parsed.portfolioButtonText || portfolioButtonText;
+            contactButtonText = parsed.contactButtonText || contactButtonText;
+          }
+        }
+      } catch (error) {
+        // ใช้ค่า default ถ้า parse ไม่ได้
+        console.debug("Error parsing hero widget settings, using defaults");
+      }
+    }
+    
     return (
       <section 
         key={widget.id} 
@@ -399,11 +513,11 @@ export default function Home() {
           <div className="text-center md:text-left animate-fade-in-up">
             <div className="inline-block mb-4">
               <span className="px-4 py-2 rounded-full text-sm font-semibold" style={{ backgroundColor: `${theme.primaryColor}20`, color: theme.primaryColor }}>
-                👋 ยินดีต้อนรับ
+                👋 {welcomeMessage}
               </span>
             </div>
             <h1 className="text-4xl md:text-6xl font-bold leading-snug gradient-text">
-             {profile.name}
+             {loggedInUserName || profile.name}
             </h1>
             <p className="mt-6 text-lg md:text-xl max-w-xl leading-relaxed" style={{ color: style.textColor || theme.textColor }}>
               {profile.description}
@@ -414,14 +528,14 @@ export default function Home() {
                 href="#portfolio"
                 className="btn-primary group py-3 px-8 rounded-full text-center shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center justify-center gap-2"
               >
-                <span>ดูผลงาน</span>
+                <span>{portfolioButtonText}</span>
                 <span className="transform group-hover:translate-x-1 transition-transform">→</span>
               </a>
               <a
                 href="#contact"
                 className="btn-outline-primary group py-3 px-8 rounded-full text-center shadow-md hover:shadow-lg transform hover:-translate-y-1 flex items-center justify-center gap-2"
               >
-                <span>ติดต่อฉัน</span>
+                <span>{contactButtonText}</span>
                 <span className="text-xl">📧</span>
               </a>
             </div>
@@ -1134,7 +1248,7 @@ export default function Home() {
         <div className="flex flex-col md:flex-row items-center justify-between w-full max-w-6xl gap-10">
           <div className="text-center md:text-left">
             <h1 className="text-4xl md:text-5xl font-bold leading-snug gradient-text">
-              สวัสดี ผม {profile.name}
+              สวัสดี ผม {loggedInUserName || profile.name}
             </h1>
             <p className="mt-4 text-lg max-w-xl" style={{ color: theme.textColor }}>
               {profile.description}

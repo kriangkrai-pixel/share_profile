@@ -10,6 +10,9 @@ import { SettingsModule } from './settings/settings.module';
 import { UploadModule } from './upload/upload.module';
 import { EditHistoryModule } from './edit-history/edit-history.module';
 import { ImagesModule } from './images/images.module';
+import { ContentModule } from './content/content.module';
+import { ThemeConfigModule } from './theme-config/theme-config.module';
+import { ThemePreferencesModule } from './theme-preferences/theme-preferences.module';
 import { RateLimitMiddleware } from './middleware/rate-limit.middleware';
 
 @Module({
@@ -27,6 +30,9 @@ import { RateLimitMiddleware } from './middleware/rate-limit.middleware';
     UploadModule,
     EditHistoryModule,
     ImagesModule,
+    ContentModule,
+    ThemeConfigModule,
+    ThemePreferencesModule,
   ],
 })
 export class AppModule implements NestModule {

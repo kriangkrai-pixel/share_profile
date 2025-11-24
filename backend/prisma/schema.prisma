@@ -10,19 +10,61 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id              Int              @id @default(autoincrement())
+  username        String           @unique
+  email           String           @unique
+  password        String
+  name            String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  pageContent     PageContent?
+  Profile         Profile?
+  themePreference ThemePreference?
+  editHistory     EditHistory[]
+
+  @@index([username])
+}
+
+model PageContent {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String   @default("")
+  email        String   @default("")
+  phone        String   @default("")
+  location     String   @default("")
+  description  String   @db.Text
+  bio          String   @db.Text
+  achievement  String   @db.Text
+  heroImage    String?  @db.LongText
+  contactImage String?  @db.LongText
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  skills      Skill[]
+  education   Education[]
+  experiences Experience[]
+  portfolios  Portfolio[]
+
+  @@index([userId])
+}
+
 model Profile {
-  id          Int      @id @default(autoincrement())
-  name        String   @default("เกรียงไกร ภูทองก้าน")
-  email       String   @default("kik550123@gmail.com")
-  phone       String   @default("091-826-6369")
-  location    String   @default("Phuket, Thailand")
-  description String   @db.Text
-  bio         String   @db.Text
-  achievement String   @db.Text
-  heroImage   String?  @db.Text
-  contactImage String? @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  name         String   @default("Name")
+  email        String   @default("Email")
+  phone        String   @default("เบอร์โทรศัพท์")
+  location     String   @default("ที่อยู่")
+  description  String   @db.Text
+  bio          String   @db.Text
+  achievement  String   @db.Text
+  heroImage    String?  @db.LongText
+  contactImage String?  @db.LongText
+  userId       Int      @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   skills      Skill[]
   education   Education[]
@@ -31,72 +73,87 @@ model Profile {
 }
 
 model Skill {
-  id        Int      @id @default(autoincrement())
-  name      String
-  profileId Int
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id            Int          @id @default(autoincrement())
+  name          String
+  profileId     Int
+  profile       Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  pageContentId Int?
+  pageContent   PageContent? @relation(fields: [pageContentId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
 
   @@index([profileId])
+  @@index([pageContentId])
 }
 
 model Education {
-  id        Int      @id @default(autoincrement())
-  type      String   // "university" or "highschool"
-  field     String
-  institution String
-  location  String?
-  year      String?
-  gpa       String?
-  status    String?  @default("studying") // "studying" or "graduated"
-  profileId Int
-  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id            Int          @id @default(autoincrement())
+  type          String // "university" or "highschool"
+  field         String
+  institution   String
+  location      String?
+  year          String?
+  gpa           String?
+  status        String?      @default("studying") // "studying" or "graduated"
+  profileId     Int
+  profile       Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  pageContentId Int?
+  pageContent   PageContent? @relation(fields: [pageContentId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
 
   @@index([profileId])
+  @@index([pageContentId])
 }
 
 model Experience {
-  id          Int      @id @default(autoincrement())
-  title       String
-  company     String
-  location    String
-  period      String
-  description String?  @db.Text
-  profileId   Int
-  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            Int          @id @default(autoincrement())
+  title         String
+  company       String
+  location      String
+  period        String
+  description   String?      @db.Text
+  profileId     Int
+  profile       Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  pageContentId Int?
+  pageContent   PageContent? @relation(fields: [pageContentId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   @@index([profileId])
+  @@index([pageContentId])
 }
 
 model Portfolio {
-  id          Int      @id @default(autoincrement())
-  title       String
-  description String   @db.Text
-  image       String?  @db.LongText // base64 หรือ URL (รองรับข้อมูลขนาดใหญ่)
-  link        String?
-  profileId   Int
-  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            Int          @id @default(autoincrement())
+  title         String
+  description   String       @db.Text
+  image         String?      @db.LongText // base64 หรือ URL (รองรับข้อมูลขนาดใหญ่)
+  link          String?
+  profileId     Int
+  profile       Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  pageContentId Int?
+  pageContent   PageContent? @relation(fields: [pageContentId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   @@index([profileId])
+  @@index([pageContentId])
 }
 
 model EditHistory {
-  id          Int      @id @default(autoincrement())
-  page        String   // หน้าที่แก้ไข เช่น "profile", "about", "portfolio", "experience"
-  section     String?  // section ที่แก้ไข เช่น "name", "bio", "skills"
-  action      String   // "create", "update", "delete"
-  oldValue    String?  @db.Text // ค่าเก่า
-  newValue    String?  @db.Text // ค่าใหม่
-  itemId      Int?     // ID ของ item ที่แก้ไข (ถ้ามี)
-  createdAt   DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  userId    Int // ID ของผู้ใช้ที่ทำการแก้ไข
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page      String // หน้าที่แก้ไข เช่น "profile", "about", "portfolio", "experience"
+  section   String? // section ที่แก้ไข เช่น "name", "bio", "skills"
+  action    String // "create", "update", "delete"
+  oldValue  String?  @db.Text // ค่าเก่า
+  newValue  String?  @db.Text // ค่าใหม่
+  itemId    Int? // ID ของ item ที่แก้ไข (ถ้ามี)
+  createdAt DateTime @default(now())
 
   @@index([page])
   @@index([createdAt])
+  @@index([userId])
 }
 
 model Layout {
@@ -110,14 +167,14 @@ model Layout {
 
 model Widget {
   id        Int      @id @default(autoincrement())
-  type      String   // "hero", "about", "skills", "education", "experience", "portfolio", "contact", "image", "text"
+  type      String // "hero", "about", "skills", "education", "experience", "portfolio", "contact", "image", "text"
   title     String?
   content   String?  @db.Text
   imageUrl  String?  @db.Text
   x         Int      @default(0)
   y         Int      @default(0)
-  w         Int      @default(6)  // width in grid units
-  h         Int      @default(4)  // height in grid units
+  w         Int      @default(6) // width in grid units
+  h         Int      @default(4) // height in grid units
   order     Int      @default(0)
   isVisible Boolean  @default(true)
   settings  String?  @db.Text // JSON string for custom settings
@@ -137,33 +194,52 @@ model ContactMessage {
   message   String   @db.Text
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
-  
+
   @@index([isRead])
   @@index([createdAt])
 }
 
 model SiteSettings {
-  id              Int      @id @default(autoincrement())
-  primaryColor    String   @default("#3b82f6") // สีหลัก
-  secondaryColor  String   @default("#8b5cf6") // สีรอง
-  accentColor     String   @default("#10b981") // สีเน้น
-  backgroundColor String   @default("#ffffff") // สีพื้นหลัง
-  textColor       String   @default("#1f2937") // สีข้อความ
-  headerBgColor   String   @default("#ffffff") // สีพื้นหลัง Header
-  headerTextColor String   @default("#1f2937") // สีตัวอักษร Header
-  footerBgColor   String   @default("#1f2937") // สีพื้นหลัง Footer
-  footerTextColor String   @default("#ffffff") // สีตัวอักษร Footer
-  
+  id              Int    @id @default(autoincrement())
+  primaryColor    String @default("#3b82f6") // สีหลัก
+  secondaryColor  String @default("#8b5cf6") // สีรอง
+  accentColor     String @default("#10b981") // สีเน้น
+  backgroundColor String @default("#ffffff") // สีพื้นหลัง
+  textColor       String @default("#1f2937") // สีข้อความ
+  headerBgColor   String @default("#ffffff") // สีพื้นหลัง Header
+  headerTextColor String @default("#1f2937") // สีตัวอักษร Header
+  footerBgColor   String @default("#1f2937") // สีพื้นหลัง Footer
+  footerTextColor String @default("#ffffff") // สีตัวอักษร Footer
+
   // Header Settings
-  headerLogoText  String   @default("KRIANGKRAI.P") // ข้อความโลโก้ Header
-  headerMenuItems String?  @db.Text // JSON array ของ menu items
-  
+  headerLogoText  String  @default("logo") // ข้อความโลโก้ Header
+  headerMenuItems String? @db.Text // JSON array ของ menu items
+
   // Footer Settings
-  footerLogoText  String   @default("KRIANGKRAI.P") // ข้อความโลโก้ Footer
+  footerLogoText    String  @default("logo") // ข้อความโลโก้ Footer
   footerDescription String? @db.Text // คำอธิบายใน Footer
-  footerEmail     String   @default("kik550123@gmail.com") // อีเมลใน Footer
-  footerLocation  String   @default("ภูเก็ต, Thailand") // ที่อยู่ใน Footer
-  footerLinks     String?  @db.Text // JSON array ของ links ใน Footer
-  
+  footerEmail       String  @default("email") // อีเมลใน Footer
+  footerLocation    String  @default("location") // ที่อยู่ใน Footer
+  footerLinks       String? @db.Text // JSON array ของ links ใน Footer
+
+  updatedAt DateTime @updatedAt
+}
+
+model ThemePreference {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  primaryColor    String   @default("#3b82f6")
+  secondaryColor  String   @default("#8b5cf6")
+  accentColor     String   @default("#10b981")
+  backgroundColor String   @default("#ffffff")
+  textColor       String   @default("#1f2937")
+  headerBgColor   String   @default("#ffffff")
+  headerTextColor String   @default("#1f2937")
+  footerBgColor   String   @default("#1f2937")
+  footerTextColor String   @default("#ffffff")
+  createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([userId])
 }

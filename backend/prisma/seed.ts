@@ -5,11 +5,28 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting database seeding...');
 
+  // หา User แรกในระบบ หรือสร้าง default user
+  let user = await prisma.user.findFirst();
+  
+  if (!user) {
+    // สร้าง default user ถ้ายังไม่มี
+    user = await prisma.user.create({
+      data: {
+        username: 'Admin',
+        email: 'kik550123@gmail.com',
+        password: '$2b$10$defaultpasswordhash', // Default hash (ควรเปลี่ยนในภายหลัง)
+        name: 'เกรียงไกร ภูทองก้าน',
+      },
+    });
+    console.log('✅ Created default user:', user.username);
+  }
+
   // สร้าง Profile เริ่มต้น
   const profile = await prisma.profile.upsert({
     where: { id: 1 },
     update: {},
     create: {
+      userId: user.id,
       name: 'เกรียงไกร ภูทองก้าน',
       email: 'kik550123@gmail.com',
       phone: '091-826-6369',

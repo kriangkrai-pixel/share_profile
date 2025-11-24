@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
 import { useProfile } from "../../context/ProfileContext";
-import { API_ENDPOINTS } from "@/lib/api-config";
+import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
+import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 interface Education {
   id: number;
@@ -32,6 +33,7 @@ export default function EducationExperiencePage() {
   const { profile, updateProfile, updateExperience, refreshProfile } = useProfile();
   const [authenticated, setAuthenticated] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
   const isSavingRef = useRef(false); // ใช้ ref เพื่อป้องกัน useEffect override ค่าขณะกำลังบันทึก
   const isInitialLoadRef = useRef(true); // ใช้ ref เพื่อตรวจสอบว่าเป็นครั้งแรกที่โหลดหรือไม่
 
@@ -69,6 +71,8 @@ export default function EducationExperiencePage() {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
+      const currentUsername = getUsernameFromToken();
+      setUsername(currentUsername);
       loadExperiences();
     }
   }, [router]);
@@ -100,13 +104,26 @@ export default function EducationExperiencePage() {
 
   const loadExperiences = async () => {
     try {
-      const response = await fetch(API_ENDPOINTS.EXPERIENCE, {
-        credentials: "include",
+      const response = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
+        method: "GET",
+        cache: "no-store",
       });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.warn(`⚠️ Failed to load experiences: ${response.status} ${response.statusText}`, errorText);
+        setExperiences([]);
+        return;
+      }
+      
       const data = await response.json();
       setExperiences(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error loading experiences:", error);
+      if (isConnectionError(error)) {
+        console.warn("⚠️ Backend may not be running.");
+      }
+      setExperiences([]);
     }
   };
 
@@ -118,10 +135,8 @@ export default function EducationExperiencePage() {
       console.log("📤 Sending education data:", educationData);
       
       // ส่งข้อมูลการศึกษาไปยัง API โดยตรง
-      const response = await fetch(API_ENDPOINTS.EDUCATION, {
+      const response = await apiRequest(API_ENDPOINTS.EDUCATION, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ education: educationData }),
       });
 
@@ -136,10 +151,8 @@ export default function EducationExperiencePage() {
 
       // บันทึกประวัติการแก้ไข
       try {
-        await fetch(API_ENDPOINTS.EDIT_HISTORY, {
+        await apiRequest(API_ENDPOINTS.EDIT_HISTORY, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
           body: JSON.stringify({
             page: "Education",
             action: "update",
@@ -152,8 +165,8 @@ export default function EducationExperiencePage() {
 
       // Fetch ข้อมูลใหม่โดยตรงเพื่อให้แน่ใจว่าข้อมูลอัปเดต (ไม่ใช้ refreshProfile เพราะจะ trigger useEffect)
       try {
-        const refreshResponse = await fetch(API_ENDPOINTS.PROFILE, {
-          credentials: "include",
+        const refreshResponse = await apiRequest(API_ENDPOINTS.PROFILE, {
+          method: "GET",
           cache: "no-store",
         });
         if (refreshResponse.ok) {
@@ -216,10 +229,8 @@ export default function EducationExperiencePage() {
     }
 
     try {
-      const response = await fetch(API_ENDPOINTS.EXPERIENCE, {
+      const response = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(newExp),
       });
 
@@ -245,10 +256,8 @@ export default function EducationExperiencePage() {
     if (!editingExp) return;
 
     try {
-      const response = await fetch(API_ENDPOINTS.EXPERIENCE, {
+      const response = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(editingExp),
       });
 
@@ -267,9 +276,8 @@ export default function EducationExperiencePage() {
     if (!confirm("คุณต้องการลบประสบการณ์นี้หรือไม่?")) return;
 
     try {
-      const response = await fetch(`${API_ENDPOINTS.EXPERIENCE}?id=${id}`, {
+      const response = await apiRequest(`${API_ENDPOINTS.EXPERIENCE}?id=${id}`, {
         method: "DELETE",
-        credentials: "include",
       });
 
       if (!response.ok) {
@@ -317,7 +325,7 @@ export default function EducationExperiencePage() {
             </div>
 
             <Link
-              href="/"
+              href={username ? `/${username}` : "/"}
               target="_blank"
               className="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
             >
