@@ -40,16 +40,9 @@ const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)
 const DEFAULT_HEADER_LINKS: HeaderMenuLink[] = [
   { label: "หน้าแรก", href: "/#hero" },
   { label: "เกี่ยวกับฉัน", href: "/#about" },
-  { label: "ทักษะ", href: "/#skills" },
   { label: "ผลงาน", href: "/#portfolio" },
   { label: "ติดต่อ", href: "/#contact" },
 ];
-
-const DEFAULT_HEADER_CTA: HeaderCta = {
-  label: "จ้างงานเลย",
-  href: "/contact",
-  enabled: true,
-};
 
 const DEFAULT_FOOTER_LINKS: FooterLink[] = [
   { label: "งานทั้งหมด", href: "/#portfolio" },
@@ -60,7 +53,6 @@ const DEFAULT_FOOTER_LINKS: FooterLink[] = [
 const FOOTER_PRESET_LINKS: FooterLink[] = [
   { label: "งานทั้งหมด", href: "/#portfolio" },
   { label: "ประสบการณ์", href: "/#experience" },
-  { label: "ทักษะ", href: "/#skills" },
   { label: "เกี่ยวกับฉัน", href: "/#about" },
   { label: "ติดต่อ", href: "/#contact" },
   { label: "หน้าแรก", href: "/#hero" },
@@ -71,7 +63,7 @@ const defaultSettings: HeaderFooterSettingsForm = {
   headerBgColor: "#ffffff",
   headerTextColor: "#1f2937",
   headerLinks: DEFAULT_HEADER_LINKS.map((link) => ({ ...link, id: generateId() })),
-  headerCta: { ...DEFAULT_HEADER_CTA },
+  headerCta: { label: "", href: "", enabled: false },
   footerLogoText: "PORTFOLIO.PRO",
   footerDescription: "ช่วยคุณนำเสนอโปรไฟล์และผลงานอย่างมืออาชีพ",
   footerEmail: "hello@portfolio.pro",
@@ -114,12 +106,13 @@ const parseHeaderMenu = (value: unknown): { links: HeaderMenuLink[]; cta: Header
       : DEFAULT_HEADER_LINKS) || DEFAULT_HEADER_LINKS;
 
   const ctaRaw = (raw as any)?.cta;
+  // ถ้าเป็นค่า default เก่า ("จ้างงานเลย", "/contact") ให้แปลงเป็นค่าว่าง
+  const isOldDefault = ctaRaw?.label === "จ้างงานเลย" && ctaRaw?.href === "/contact";
   const cta: HeaderCta = {
-    label: ctaRaw?.label || DEFAULT_HEADER_CTA.label,
-    href: ctaRaw?.href || DEFAULT_HEADER_CTA.href,
+    label: isOldDefault ? "" : (ctaRaw?.label || ""),
+    href: isOldDefault ? "" : (ctaRaw?.href || ""),
     external: Boolean(ctaRaw?.external),
-    enabled:
-      ctaRaw?.enabled === undefined ? DEFAULT_HEADER_CTA.enabled ?? true : Boolean(ctaRaw.enabled),
+    enabled: isOldDefault ? false : (ctaRaw?.enabled === undefined ? false : Boolean(ctaRaw.enabled)),
   };
 
   return { links, cta };
@@ -128,7 +121,6 @@ const parseHeaderMenu = (value: unknown): { links: HeaderMenuLink[]; cta: Header
 const PRESET_SECTIONS: HeaderMenuLink[] = [
   { label: "หน้าแรก", href: "/#hero" },
   { label: "เกี่ยวกับฉัน", href: "/#about" },
-  { label: "ทักษะ", href: "/#skills" },
   { label: "ผลงาน", href: "/#portfolio" },
   { label: "ติดต่อ", href: "/#contact" },
 ];
@@ -203,7 +195,7 @@ export default function HeaderFooterPage() {
         headerBgColor: themeData?.headerBgColor || settingsData?.headerBgColor || defaultSettings.headerBgColor,
         headerTextColor: themeData?.headerTextColor || settingsData?.headerTextColor || defaultSettings.headerTextColor,
         headerLinks: toEditableLinks(menu.links, DEFAULT_HEADER_LINKS),
-        headerCta: menu.cta || { ...DEFAULT_HEADER_CTA },
+        headerCta: menu.cta || { label: "", href: "", enabled: false },
         footerLogoText: settingsData?.footerLogoText || defaultSettings.footerLogoText,
         footerDescription: settingsData?.footerDescription || defaultSettings.footerDescription,
         footerEmail: settingsData?.footerEmail || defaultSettings.footerEmail,

@@ -7,16 +7,42 @@ import { usePathname } from "next/navigation";
 import { useThemeConfig } from "../context/ThemeConfigContext";
 import { useSiteSettings } from "../context/SiteSettingsContext";
 
+const RESERVED_PATH_SEGMENTS = new Set(["admin", "register", "login", "portfolio", "contact", "api", "_next"]);
+
 export default function Header() {
   const pathname = usePathname();
   const { theme } = useThemeConfig();
   const { settings, isLoading: siteSettingsLoading } = useSiteSettings();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const pathSegments = useMemo(() => pathname?.split("/").filter(Boolean) ?? [], [pathname]);
+  const ownerSegment = useMemo(() => {
+    const firstSegment = pathSegments[0];
+    if (!firstSegment || RESERVED_PATH_SEGMENTS.has(firstSegment)) {
+      return null;
+    }
+    return firstSegment;
+  }, [pathSegments]);
+  const ownerBasePath = ownerSegment ? `/${ownerSegment}` : "/";
+  const isPrimaryOwnerPage = ownerSegment ? pathname === ownerBasePath : pathname === "/";
 
   const headerTheme = theme.header;
   const palette = theme.palette;
   const headerMenu = settings.headerMenuItems;
-  const navLinks = headerMenu?.links?.length ? headerMenu.links : headerTheme.links || [];
+  const navLinks = useMemo(() => {
+    const rawLinks = headerMenu?.links?.length ? headerMenu.links : headerTheme.links || [];
+    return rawLinks.filter((link) => {
+      const href = link.href?.trim();
+      if (!href) return false;
+      return href !== "/#skills" && href !== "#skills";
+    });
+  }, [headerMenu?.links, headerTheme.links]);
+
+  const ctaButton = useMemo(() => {
+    const cta = headerMenu?.cta;
+    if (!cta || cta.enabled === false) return null;
+    if (!cta.label?.trim() || !cta.href?.trim()) return null;
+    return cta;
+  }, [headerMenu?.cta]);
 
   const withVarFallback = (variable: string, fallback: string) => `var(${variable}, ${fallback})`;
 
@@ -50,20 +76,33 @@ export default function Header() {
 
     const target = href.replace("/#", "").replace("#", "");
 
-    if (pathname === "/") {
+    if (isPrimaryOwnerPage) {
       if (!target) {
-        window.history.pushState(null, "", "/");
+        window.history.pushState(null, "", ownerBasePath);
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
 
       const element = document.getElementById(target);
       if (element) {
-        window.history.pushState(null, "", `#${target}`);
+        const newUrl = ownerBasePath === "/" ? `#${target}` : `${ownerBasePath}#${target}`;
+        window.history.pushState(null, "", newUrl);
         element.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
       }
+
+      const fallbackUrl = ownerBasePath === "/" ? `/#${target}` : `${ownerBasePath}#${target}`;
+      window.location.href = fallbackUrl;
     } else {
-      window.location.href = target ? `/#${target}` : "/";
+      const destination =
+        ownerBasePath === "/"
+          ? target
+            ? `/#${target}`
+            : "/"
+          : target
+            ? `${ownerBasePath}#${target}`
+            : ownerBasePath;
+      window.location.href = destination;
     }
   };
 
@@ -172,6 +211,27 @@ export default function Header() {
             {navLinks.map((link) => (
               <li key={`desktop-${link.label}`}>{renderNavButton(link, "desktop")}</li>
             ))}
+            {ctaButton && (
+              <li>
+                {isSectionLink(ctaButton.href) ? (
+                  <button
+                    onClick={(e) => scrollToSection(ctaButton.href, e)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-300 font-medium"
+                  >
+                    {ctaButton.label}
+                  </button>
+                ) : (
+                  <Link
+                    href={ctaButton.href}
+                    target={ctaButton.external ? "_blank" : undefined}
+                    rel={ctaButton.external ? "noopener noreferrer" : undefined}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-300 font-medium"
+                  >
+                    {ctaButton.label}
+                  </Link>
+                )}
+              </li>
+            )}
           </ul>
         </nav>
 
@@ -183,10 +243,32 @@ export default function Header() {
         >
           <ul className="flex flex-col font-medium" style={{ color: colors.text }}>
             {navLinks.map((link) => (
-              <li key={`mobile-${link.label}`} className="border-b border-gray-100 last:border-b-0">
+              <li key={`mobile-${link.label}`} className="border-b border-gray-100">
                 {renderNavButton(link, "mobile")}
               </li>
             ))}
+            {ctaButton && (
+              <li className="border-b border-gray-100 last:border-b-0">
+                {isSectionLink(ctaButton.href) ? (
+                  <button
+                    onClick={(e) => scrollToSection(ctaButton.href, e)}
+                    className="w-full text-left px-6 py-4 bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-300 font-medium"
+                  >
+                    {ctaButton.label}
+                  </button>
+                ) : (
+                  <Link
+                    href={ctaButton.href}
+                    target={ctaButton.external ? "_blank" : undefined}
+                    rel={ctaButton.external ? "noopener noreferrer" : undefined}
+                    onClick={closeMenu}
+                    className="block w-full px-6 py-4 bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-300 font-medium"
+                  >
+                    {ctaButton.label}
+                  </Link>
+                )}
+              </li>
+            )}
           </ul>
         </nav>
       </div>

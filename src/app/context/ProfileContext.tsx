@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+// เพิ่ม useMemo/useCallback เพื่อลดการ re-render ที่ไม่จำเป็น
+import { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from "react";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
 
 interface ProfileData {
@@ -98,7 +99,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   // ฟังก์ชันสำหรับโหลดข้อมูลจาก API
-  const fetchProfile = async () => {
+  // ใช้ useCallback เพื่อให้ reference ของ function คงที่
+  const fetchProfile = useCallback(async () => {
     console.log("📥 Fetching profile data from API...");
 
     const maxRetries = 3;
@@ -207,7 +209,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(false);
-  };
+  }, []); // ไม่มี dependencies เพราะใช้แค่ setProfile และ setLoading ซึ่งเป็น stable functions จาก useState
 
   useEffect(() => {
     fetchProfile();
@@ -238,7 +240,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const updateProfile = async (data: Partial<ProfileData>) => {
+  // ใช้ useCallback เพื่อไม่ให้สร้าง function ใหม่ทุกครั้ง
+  const updateProfile = useCallback(async (data: Partial<ProfileData>) => {
     console.log("🔄 Starting profile update with data:", Object.keys(data));
     try {
       // อัปเดตข้อมูลหลัก
@@ -395,13 +398,15 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       // Throw error ต่อไปเพื่อให้ caller รู้ว่ามีปัญหา
       throw error;
     }
-  };
+  }, []);
 
-  const refreshProfile = async () => {
+  // memoize refreshProfile เพื่อไม่ให้ consumer re-render โดยไม่จำเป็น
+  const refreshProfile = useCallback(async () => {
     await fetchProfile();
-  };
+  }, [fetchProfile]);
 
-  const updatePortfolio = async (portfolio: ProfileData["portfolio"]) => {
+  // memoize updatePortfolio
+  const updatePortfolio = useCallback(async (portfolio: ProfileData["portfolio"]) => {
     try {
       const portfolioResponse = await apiRequest(API_ENDPOINTS.PORTFOLIO, {
         method: "PUT",
@@ -438,9 +443,10 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         return updated;
       });
     }
-  };
+  }, []);
 
-  const updateExperience = async (experience: ProfileData["experience"]) => {
+  // memoize updateExperience
+  const updateExperience = useCallback(async (experience: ProfileData["experience"]) => {
     try {
       const experienceResponse = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
         method: "PUT",
@@ -477,10 +483,22 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         return updated;
       });
     }
-  };
+  }, []);
+
+  // ใช้ useMemo เพื่อหลีกเลี่ยงการสร้าง object context ใหม่ทุกครั้ง
+  const contextValue = useMemo(
+    () => ({
+      profile,
+      updateProfile,
+      updatePortfolio,
+      updateExperience,
+      refreshProfile,
+    }),
+    [profile, updateProfile, updatePortfolio, updateExperience, refreshProfile]
+  );
 
   return (
-    <ProfileContext.Provider value={{ profile, updateProfile, updatePortfolio, updateExperience, refreshProfile }}>
+    <ProfileContext.Provider value={contextValue}>
       {children}
     </ProfileContext.Provider>
   );

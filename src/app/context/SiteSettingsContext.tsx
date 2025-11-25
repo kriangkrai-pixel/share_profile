@@ -63,7 +63,6 @@ const DEFAULT_HEADER_MENU: HeaderMenuConfig = {
   links: [
     { label: "หน้าแรก", href: "/#hero" },
     { label: "เกี่ยวกับฉัน", href: "/#about" },
-    { label: "ทักษะ", href: "/#skills" },
     { label: "ผลงาน", href: "/#portfolio" },
     { label: "ติดต่อ", href: "/#contact" },
   ],
@@ -128,10 +127,9 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const queryOwner = searchParams?.get("username")?.trim() || null;
   const pathSegments = pathname?.split("/").filter(Boolean) ?? [];
+  const firstSegment = pathSegments[0];
   const pathOwner =
-    pathSegments.length === 1 && !RESERVED_PATH_SEGMENTS.has(pathSegments[0])
-      ? pathSegments[0]
-      : null;
+    firstSegment && !RESERVED_PATH_SEGMENTS.has(firstSegment) ? firstSegment : null;
   const ownerParam = queryOwner || pathOwner;
   const storageKey = ownerParam ? `${STORAGE_KEY}:${ownerParam}` : STORAGE_KEY;
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);

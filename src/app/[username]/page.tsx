@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+// ใช้ useMemo/useCallback/useRef เพื่อลด re-render และจัดการค่าแบบ stable
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -128,8 +129,12 @@ export default function UserProfilePage() {
   // State สำหรับ showAll ของ Portfolio (แยกตาม widget id)
   const [portfolioShowAll, setPortfolioShowAll] = useState<Record<number, boolean>>({});
 
+  // ใช้ useRef เก็บค่าเวลาที่ fetch ล่าสุด เพื่อลด re-render เมื่อ focus
+  const lastFetchTimeRef = useRef<number>(Date.now());
+
   // Transform API response to ProfileData format
-  const transformUserContent = (data: any): ProfileData => {
+  // ใช้ useCallback เพื่อไม่ต้องสร้าง function ใหม่ทุกครั้ง
+  const transformUserContent = useCallback((data: any): ProfileData => {
     return {
       name: data.name || "",
       email: data.email || "",
@@ -158,7 +163,7 @@ export default function UserProfilePage() {
       experience: data.experience || [],
       portfolio: data.portfolio || [],
     };
-  };
+  }, []);
 
   // โหลดข้อมูลผู้ใช้
   useEffect(() => {
@@ -225,154 +230,155 @@ export default function UserProfilePage() {
     loadUserContent();
   }, [username]);
 
-  // โหลด Layout และ Theme จาก API
-  useEffect(() => {
-    if (!profile) return; // Wait for profile to load first
+  // helper สำหรับ theme - memoize เพื่อใช้ซ้ำ
+  const resolveTheme = useCallback((data: Partial<ThemeSettings>): ThemeSettings => ({
+    primaryColor: data.primaryColor || DEFAULT_THEME_SETTINGS.primaryColor,
+    secondaryColor: data.secondaryColor || DEFAULT_THEME_SETTINGS.secondaryColor,
+    accentColor: data.accentColor || DEFAULT_THEME_SETTINGS.accentColor,
+    backgroundColor: data.backgroundColor || DEFAULT_THEME_SETTINGS.backgroundColor,
+    textColor: data.textColor || DEFAULT_THEME_SETTINGS.textColor,
+    headerBgColor:
+      data.headerBgColor ||
+      data.backgroundColor ||
+      DEFAULT_THEME_SETTINGS.headerBgColor,
+    headerTextColor:
+      data.headerTextColor ||
+      data.textColor ||
+      DEFAULT_THEME_SETTINGS.headerTextColor,
+    footerBgColor:
+      data.footerBgColor ||
+      data.primaryColor ||
+      data.secondaryColor ||
+      DEFAULT_THEME_SETTINGS.footerBgColor,
+    footerTextColor: data.footerTextColor || DEFAULT_THEME_SETTINGS.footerTextColor,
+  }), []);
 
-    const loadLayout = async () => {
-      try {
-        const layoutEndpoint = username
-          ? API_ENDPOINTS.LAYOUT_USERNAME(username)
-          : API_ENDPOINTS.LAYOUT;
-        console.log("🔄 Loading layout from:", layoutEndpoint);
-        const response = await apiRequest(layoutEndpoint, {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "Unknown error");
-          console.error(`❌ Failed to load layout: ${response.status} ${response.statusText}`, errorText);
-          setLayout(null);
-          return;
-        }
-        
-        const data = await response.json();
-        console.log("✅ Layout loaded:", data);
-        
-        if (data && !data.error && data.widgets) {
-          setLayout(data);
-        } else {
-          console.warn("⚠️ Invalid layout data:", data);
-          setLayout(null);
-        }
-      } catch (error) {
-        console.error("❌ Error loading layout:", error);
-        if (error instanceof TypeError && error.message === "Failed to fetch") {
-          console.warn("⚠️ Backend may not be running or CORS issue. Using default layout.");
-        }
+  // memoize loadLayout เพื่อป้องกันการสร้าง function ใหม่
+  const loadLayout = useCallback(async () => {
+    try {
+      const layoutEndpoint = username
+        ? API_ENDPOINTS.LAYOUT_USERNAME(username)
+        : API_ENDPOINTS.LAYOUT;
+      console.log("🔄 Loading layout from:", layoutEndpoint);
+      const response = await apiRequest(layoutEndpoint, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.error(`❌ Failed to load layout: ${response.status} ${response.statusText}`, errorText);
+        setLayout(null);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log("✅ Layout loaded:", data);
+      
+      if (data && !data.error && data.widgets) {
+        setLayout(data);
+      } else {
+        console.warn("⚠️ Invalid layout data:", data);
         setLayout(null);
       }
-    };
-
-    const resolveTheme = (data: Partial<ThemeSettings>): ThemeSettings => ({
-      primaryColor: data.primaryColor || DEFAULT_THEME_SETTINGS.primaryColor,
-      secondaryColor: data.secondaryColor || DEFAULT_THEME_SETTINGS.secondaryColor,
-      accentColor: data.accentColor || DEFAULT_THEME_SETTINGS.accentColor,
-      backgroundColor: data.backgroundColor || DEFAULT_THEME_SETTINGS.backgroundColor,
-      textColor: data.textColor || DEFAULT_THEME_SETTINGS.textColor,
-      headerBgColor:
-        data.headerBgColor ||
-        data.backgroundColor ||
-        DEFAULT_THEME_SETTINGS.headerBgColor,
-      headerTextColor:
-        data.headerTextColor ||
-        data.textColor ||
-        DEFAULT_THEME_SETTINGS.headerTextColor,
-      footerBgColor:
-        data.footerBgColor ||
-        data.primaryColor ||
-        data.secondaryColor ||
-        DEFAULT_THEME_SETTINGS.footerBgColor,
-      footerTextColor: data.footerTextColor || DEFAULT_THEME_SETTINGS.footerTextColor,
-    });
-
-    const loadGlobalSettingsTheme = async () => {
-      try {
-        const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to load global theme (${response.status})`);
-        }
-
-        const data = await response.json();
-        if (data && !data.error) {
-          setTheme(
-            resolveTheme({
-              primaryColor: data.primaryColor,
-              secondaryColor: data.secondaryColor,
-              accentColor: data.accentColor,
-              backgroundColor: data.backgroundColor,
-              textColor: data.textColor,
-              headerBgColor: data.headerBgColor,
-              headerTextColor: data.headerTextColor,
-              footerBgColor: data.footerBgColor,
-              footerTextColor: data.footerTextColor,
-            }),
-          );
-        }
-      } catch (error) {
-        console.error("❌ Error loading fallback theme:", error);
+    } catch (error) {
+      console.error("❌ Error loading layout:", error);
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
+        console.warn("⚠️ Backend may not be running or CORS issue. Using default layout.");
       }
-    };
+      setLayout(null);
+    }
+  }, [username]);
 
-    const loadTheme = async () => {
-      try {
-        const endpoint = username ? API_ENDPOINTS.THEME_USERNAME(username) : API_ENDPOINTS.SETTINGS;
-        const response = await apiRequest(endpoint, {
-          method: "GET",
-          cache: "no-store",
-        });
+  const loadGlobalSettingsTheme = useCallback(async () => {
+    try {
+      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
+        method: "GET",
+        cache: "no-store",
+      });
 
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "Unknown error");
-          const errorMessage = `Failed to load theme preference (${response.status})`;
-          console.warn(`${errorMessage}: ${errorText}`);
+      if (!response.ok) {
+        throw new Error(`Failed to load global theme (${response.status})`);
+      }
 
-          // Gracefully fall back to global settings for missing or server errors
-          if (response.status === 404 || response.status >= 500) {
-            await loadGlobalSettingsTheme();
-            return;
-          }
+      const data = await response.json();
+      if (data && !data.error) {
+        setTheme(
+          resolveTheme({
+            primaryColor: data.primaryColor,
+            secondaryColor: data.secondaryColor,
+            accentColor: data.accentColor,
+            backgroundColor: data.backgroundColor,
+            textColor: data.textColor,
+            headerBgColor: data.headerBgColor,
+            headerTextColor: data.headerTextColor,
+            footerBgColor: data.footerBgColor,
+            footerTextColor: data.footerTextColor,
+          }),
+        );
+      }
+    } catch (error) {
+      console.error("❌ Error loading fallback theme:", error);
+    }
+  }, [resolveTheme]);
 
-          throw new Error(errorMessage);
-        }
+  const loadTheme = useCallback(async () => {
+    try {
+      const endpoint = username ? API_ENDPOINTS.THEME_USERNAME(username) : API_ENDPOINTS.SETTINGS;
+      const response = await apiRequest(endpoint, {
+        method: "GET",
+        cache: "no-store",
+      });
 
-        const data = await response.json();
-        if (data && !data.error) {
-          setTheme(
-            resolveTheme({
-              primaryColor: data.primaryColor,
-              secondaryColor: data.secondaryColor,
-              accentColor: data.accentColor,
-              backgroundColor: data.backgroundColor,
-              textColor: data.textColor,
-              headerBgColor: data.headerBgColor,
-              headerTextColor: data.headerTextColor,
-              footerBgColor: data.footerBgColor,
-              footerTextColor: data.footerTextColor,
-            }),
-          );
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        const errorMessage = `Failed to load theme preference (${response.status})`;
+        console.warn(`${errorMessage}: ${errorText}`);
+
+        // Gracefully fall back to global settings for missing or server errors
+        if (response.status === 404 || response.status >= 500) {
+          await loadGlobalSettingsTheme();
           return;
         }
 
-        console.warn("⚠️ Theme preference response invalid, using global settings.");
-        await loadGlobalSettingsTheme();
-      } catch (error) {
-        console.error("❌ Error loading theme preference:", error);
-        await loadGlobalSettingsTheme();
+        throw new Error(errorMessage);
       }
-    };
 
-    // โหลดข้อมูลทั้งหมดพร้อมกัน
+      const data = await response.json();
+      if (data && !data.error) {
+        setTheme(
+          resolveTheme({
+            primaryColor: data.primaryColor,
+            secondaryColor: data.secondaryColor,
+            accentColor: data.accentColor,
+            backgroundColor: data.backgroundColor,
+            textColor: data.textColor,
+            headerBgColor: data.headerBgColor,
+            headerTextColor: data.headerTextColor,
+            footerBgColor: data.footerBgColor,
+            footerTextColor: data.footerTextColor,
+          }),
+        );
+        return;
+      }
+
+      console.warn("⚠️ Theme preference response invalid, using global settings.");
+      await loadGlobalSettingsTheme();
+    } catch (error) {
+      console.error("❌ Error loading theme preference:", error);
+      await loadGlobalSettingsTheme();
+    }
+  }, [username, resolveTheme, loadGlobalSettingsTheme]);
+
+  // โหลด Layout และ Theme จาก API (ใช้ helper ที่ memoize แล้ว)
+  useEffect(() => {
+    if (!profile) return;
+
     Promise.all([loadLayout(), loadTheme()]).finally(() => {
       setLoadingLayout(false);
     });
-  }, [profile, username]);
+  }, [profile, loadLayout, loadTheme]);
 
   // Apply Theme CSS Variables
   useEffect(() => {
@@ -389,110 +395,28 @@ export default function UserProfilePage() {
     }
   }, [theme]);
 
-  // Refresh เมื่อหน้ามี focus (Optimized: โหลดเฉพาะเมื่อเกิน 5 นาที)
-  useEffect(() => {
+  // Refresh เมื่อหน้า focus (รอให้ข้อมูลเก่าเกิน 5 นาที)
+  const handleFocus = useCallback(async () => {
     if (!profile) return;
-    
-    let lastFetchTime = Date.now();
-    
-    const handleFocus = async () => {
-      const now = Date.now();
-      const fiveMinutes = 5 * 60 * 1000;
-      
-      if (now - lastFetchTime < fiveMinutes) {
-        console.log("⚡ Skip reload - Data is still fresh");
-        return;
-      }
-      
-      console.log("🔄 Reloading data after 5 minutes...");
-      lastFetchTime = now;
-      
-      const loadLayout = async () => {
-        try {
-          const layoutEndpoint = username
-            ? API_ENDPOINTS.LAYOUT_USERNAME(username)
-            : API_ENDPOINTS.LAYOUT;
-          const response = await apiRequest(layoutEndpoint, {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          });
-          
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => "Unknown error");
-            console.warn(`⚠️ Failed to reload layout: ${response.status} ${response.statusText}`, errorText);
-            return;
-          }
-          
-          const data = await response.json();
-          
-          if (data && !data.error && data.widgets) {
-            setLayout(data);
-          } else {
-            console.warn("⚠️ Invalid layout data on focus:", data);
-          }
-        } catch (error) {
-          console.error("❌ Error loading layout:", error);
-          if (error instanceof TypeError && error.message === "Failed to fetch") {
-            console.warn("⚠️ Backend may not be running or CORS issue.");
-          }
-        }
-      };
-      
-      const loadTheme = async () => {
-        try {
-          if (!username) return;
-          
-          // ใช้ theme preferences API ตาม username
-          const response = await apiRequest(API_ENDPOINTS.THEME_USERNAME(username), {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          });
-          
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => "Unknown error");
-            console.warn(`⚠️ Failed to reload theme: ${response.status} ${response.statusText}`, errorText);
-            // Fallback to default theme
-            setTheme(DEFAULT_THEME_SETTINGS);
-            return;
-          }
-          
-          const data = await response.json();
-          if (data && !data.error) {
-            setTheme(resolveTheme({
-              primaryColor: data.primaryColor,
-              secondaryColor: data.secondaryColor,
-              accentColor: data.accentColor,
-              backgroundColor: data.backgroundColor,
-              textColor: data.textColor,
-              headerBgColor: data.headerBgColor,
-              headerTextColor: data.headerTextColor,
-              footerBgColor: data.footerBgColor,
-              footerTextColor: data.footerTextColor,
-            }));
-          } else {
-            setTheme(DEFAULT_THEME_SETTINGS);
-          }
-        } catch (error) {
-          console.error("❌ Error loading theme:", error);
-          if (error instanceof TypeError && error.message === "Failed to fetch") {
-            console.warn("⚠️ Backend may not be running or CORS issue.");
-          }
-          // Fallback to default theme
-          setTheme(DEFAULT_THEME_SETTINGS);
-        }
-      };
-      
-      await Promise.all([
-        loadLayout(),
-        loadTheme(),
-      ]);
-    };
 
+    const now = Date.now();
+    const fiveMinutes = 5 * 60 * 1000;
+
+    if (now - lastFetchTimeRef.current < fiveMinutes) {
+      console.log("⚡ Skip reload - Data is still fresh");
+      return;
+    }
+
+    console.log("🔄 Reloading data after 5 minutes...");
+    lastFetchTimeRef.current = now;
+
+    await Promise.all([loadLayout(), loadTheme()]);
+  }, [profile, loadLayout, loadTheme]);
+
+  useEffect(() => {
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
-  }, [profile, username]);
+  }, [handleFocus]);
 
   // ฟังก์ชันส่งข้อความติดต่อ
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -564,8 +488,8 @@ export default function UserProfilePage() {
     }
   }, []);
 
-  // ฟังก์ชันดึง Style จาก Widget settings
-  const getWidgetStyle = (widget: Widget): WidgetStyle => {
+  // ฟังก์ชันดึง Style จาก Widget settings (memoized)
+  const getWidgetStyle = useCallback((widget: Widget): WidgetStyle => {
     if (!widget.settings) return {};
     
     try {
@@ -600,10 +524,10 @@ export default function UserProfilePage() {
       }
       return {};
     }
-  };
+  }, []);
 
-  // Apply style to section
-  const getStyleObject = (style: WidgetStyle) => {
+  // Apply style to section (memoized)
+  const getStyleObject = useCallback((style: WidgetStyle) => {
     return {
       backgroundColor: style.backgroundColor || undefined,
       color: style.textColor || undefined,
@@ -613,35 +537,9 @@ export default function UserProfilePage() {
       textAlign: style.alignment || undefined,
       flexDirection: style.flexDirection || undefined,
     } as React.CSSProperties;
-  };
+  }, []);
 
-  // ฟังก์ชันสำหรับแสดงแต่ละ widget
-  const renderWidget = (widget: Widget) => {
-    if (!widget.isVisible || !profile) return null;
-
-    switch (widget.type) {
-      case "hero":
-        return renderHeroSection(widget);
-      case "about":
-        return renderAboutSection(widget);
-      case "skills":
-        return renderSkillsSection(widget);
-      case "education":
-        return renderEducationSection(widget);
-      case "portfolio":
-        return renderPortfolioSection(widget);
-      case "contact":
-        return renderContactSection(widget);
-      case "image":
-        return renderImageWidget(widget);
-      case "text":
-        return renderTextWidget(widget);
-      default:
-        return null;
-    }
-  };
-
-  const renderHeroSection = (widget: Widget) => {
+  const renderHeroSection = useCallback((widget: Widget) => {
     if (!profile) return null;
     
     const style = getWidgetStyle(widget);
@@ -679,6 +577,7 @@ export default function UserProfilePage() {
     return (
       <section 
         key={widget.id} 
+        id="hero"
         className="relative flex items-center justify-center px-6 md:px-20 py-16 md:py-24 overflow-hidden"
         style={{ 
           background: bgColor,
@@ -739,9 +638,9 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [profile, theme, getWidgetStyle]);
 
-  const renderAboutSection = (widget: Widget) => {
+  const renderAboutSection = useCallback((widget: Widget) => {
     if (!profile) return null;
     
     const style = getWidgetStyle(widget);
@@ -793,9 +692,9 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [profile, theme, getWidgetStyle]);
 
-  const renderSkillsSection = (widget: Widget) => {
+  const renderSkillsSection = useCallback((widget: Widget) => {
     if (!profile) return null;
     
     const style = getWidgetStyle(widget);
@@ -803,6 +702,7 @@ export default function UserProfilePage() {
     return (
       <section 
         key={widget.id} 
+        id="skills"
         className="px-6 md:px-20 py-12"
         style={{ backgroundColor: style.backgroundColor || theme.backgroundColor }}
       >
@@ -830,9 +730,9 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [profile, theme, getWidgetStyle]);
 
-  const renderEducationSection = (widget: Widget) => {
+  const renderEducationSection = useCallback((widget: Widget) => {
     if (!profile) return null;
     
     const style = getWidgetStyle(widget);
@@ -974,9 +874,9 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [profile, theme, getWidgetStyle]);
 
-  const renderPortfolioSection = (widget: Widget) => {
+  const renderPortfolioSection = useCallback((widget: Widget) => {
     if (!profile) return null;
     
     const style = getWidgetStyle(widget);
@@ -1108,9 +1008,9 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [profile, theme, portfolioShowAll, getWidgetStyle]);
 
-  const renderContactSection = (widget: Widget) => {
+  const renderContactSection = useCallback((widget: Widget) => {
     if (!profile) return null;
     
     const style = getWidgetStyle(widget);
@@ -1299,9 +1199,9 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [profile, theme, contactForm, submitting, getWidgetStyle]);
 
-  const renderImageWidget = (widget: Widget) => {
+  const renderImageWidget = useCallback((widget: Widget) => {
     const style = getWidgetStyle(widget);
     const styleObj = getStyleObject(style);
 
@@ -1352,9 +1252,9 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [getWidgetStyle, getStyleObject, theme]);
 
-  const renderTextWidget = (widget: Widget) => {
+  const renderTextWidget = useCallback((widget: Widget) => {
     const style = getWidgetStyle(widget);
     const styleObj = getStyleObject(style);
 
@@ -1398,7 +1298,54 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  };
+  }, [getWidgetStyle, getStyleObject, theme]);
+
+  // ฟังก์ชันสำหรับแสดง widget ตามประเภท (memoized)
+  const renderWidget = useCallback((widget: Widget) => {
+    if (!widget.isVisible || !profile) return null;
+
+    switch (widget.type) {
+      case "hero":
+        return renderHeroSection(widget);
+      case "about":
+        return renderAboutSection(widget);
+      case "skills":
+        return renderSkillsSection(widget);
+      case "education":
+        return renderEducationSection(widget);
+      case "portfolio":
+        return renderPortfolioSection(widget);
+      case "contact":
+        return renderContactSection(widget);
+      case "image":
+        return renderImageWidget(widget);
+      case "text":
+        return renderTextWidget(widget);
+      default:
+        return null;
+    }
+  }, [
+    profile,
+    renderHeroSection,
+    renderAboutSection,
+    renderSkillsSection,
+    renderEducationSection,
+    renderPortfolioSection,
+    renderContactSection,
+    renderImageWidget,
+    renderTextWidget,
+  ]);
+
+  // Memoize รายการ widget ที่ต้องแสดง (ลดการ sort/filter ซ้ำ)
+  // ⚠️ ต้องเรียก useMemo ก่อน early returns เพื่อให้ลำดับ hooks ตรงกันทุกครั้ง
+  const sortedWidgets = useMemo(() => {
+    if (!layout || !Array.isArray(layout.widgets) || layout.widgets.length === 0) {
+      return [];
+    }
+    return [...layout.widgets]
+      .filter((w) => w.isVisible)
+      .sort((a, b) => a.order - b.order);
+  }, [layout?.widgets]);
 
   // Loading state
   if (loadingLayout || !profile) {
@@ -1437,10 +1384,7 @@ export default function UserProfilePage() {
   }
 
   // ถ้ามี layout ให้แสดงตาม layout
-  if (layout && Array.isArray(layout.widgets) && layout.widgets.length > 0) {
-    const sortedWidgets = [...layout.widgets]
-      .filter((w) => w.isVisible)
-      .sort((a, b) => a.order - b.order);
+  if (sortedWidgets.length > 0) {
 
     return (
       <main className="min-h-screen" style={{ backgroundColor: theme.backgroundColor, color: theme.textColor }}>
