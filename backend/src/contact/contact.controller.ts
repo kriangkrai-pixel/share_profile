@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Put, Delete, Body, Query, HttpCode, HttpStatus, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Query, HttpCode, HttpStatus, ParseIntPipe, UseGuards, Request } from '@nestjs/common';
 import { ContactService } from './contact.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('contact')
 export class ContactController {
@@ -13,9 +14,10 @@ export class ContactController {
    * Query: ?unreadOnly=true (optional)
    */
   @Get()
-  async getMessages(@Query('unreadOnly') unreadOnly?: string) {
+  @UseGuards(JwtAuthGuard)
+  async getMessages(@Request() req: any, @Query('unreadOnly') unreadOnly?: string) {
     console.log(`📋 Fetching messages (unreadOnly: ${unreadOnly})`);
-    return this.contactService.getMessages(unreadOnly === 'true');
+    return this.contactService.getMessages(req.user.userId, unreadOnly === 'true');
   }
 
   // ดูลำดับการว่า @Get('hello') อยู่ตรงไหน
@@ -40,9 +42,10 @@ export class ContactController {
    * อัปเดตสถานะข้อความ (อ่านแล้ว/ยังไม่อ่าน)
    */
   @Put()
-  async updateMessage(@Body() data: UpdateMessageDto) {
+  @UseGuards(JwtAuthGuard)
+  async updateMessage(@Request() req: any, @Body() data: UpdateMessageDto) {
     console.log(`✏️ Updating contact message ID: ${data.id}, isRead: ${data.isRead}`);
-    return this.contactService.updateMessage(data);
+    return this.contactService.updateMessage(req.user.userId, data);
   }
 
   /**
@@ -51,9 +54,10 @@ export class ContactController {
    */
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteMessage(@Query('id', ParseIntPipe) id: number) {
+  @UseGuards(JwtAuthGuard)
+  async deleteMessage(@Request() req: any, @Query('id', ParseIntPipe) id: number) {
     console.log(`🗑️ Deleting contact message ID: ${id}`);
-    await this.contactService.deleteMessage(id);
+    await this.contactService.deleteMessage(req.user.userId, id);
   }
 
 

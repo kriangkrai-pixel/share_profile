@@ -86,6 +86,20 @@ export class WidgetsService {
       throw new BadRequestException('layoutId and type are required');
     }
 
+    const numericLayoutId = Number(layoutId);
+    if (!Number.isFinite(numericLayoutId)) {
+      throw new BadRequestException('layoutId must be a number');
+    }
+
+    const layoutExists = await this.prisma.layout.findUnique({
+      where: { id: numericLayoutId },
+      select: { id: true },
+    });
+
+    if (!layoutExists) {
+      throw new BadRequestException('ไม่พบ Layout สำหรับสร้าง Widget');
+    }
+
     // Validate and stringify settings if it's an object
     let settingsString = settings;
     if (settings && typeof settings === 'object') {
@@ -99,16 +113,16 @@ export class WidgetsService {
 
     const newWidget = await this.prisma.widget.create({
       data: {
-        layoutId: parseInt(layoutId),
+        layoutId: layoutExists.id,
         type,
         title,
         content,
         imageUrl,
-        x: x || 0,
-        y: y || 0,
-        w: w || 6,
-        h: h || 4,
-        order: order || 0,
+        x: Number.isFinite(Number(x)) ? Number(x) : 0,
+        y: Number.isFinite(Number(y)) ? Number(y) : 0,
+        w: Number.isFinite(Number(w)) ? Number(w) : 6,
+        h: Number.isFinite(Number(h)) ? Number(h) : 4,
+        order: Number.isFinite(Number(order)) ? Number(order) : 0,
         isVisible: true,
         settings: settingsString,
       },

@@ -57,13 +57,22 @@ export default function LayoutBuilder() {
   useEffect(() => {
     const currentUsername = getUsernameFromToken();
     setUsername(currentUsername);
-    loadLayout();
+    loadLayout(currentUsername || undefined);
   }, []);
 
-  const loadLayout = async () => {
+  const buildLayoutUrl = (targetUsername?: string) => {
+    const baseUrl = targetUsername
+      ? API_ENDPOINTS.LAYOUT_USERNAME(targetUsername)
+      : API_ENDPOINTS.LAYOUT;
+    const separator = baseUrl.includes("?") ? "&" : "?";
+    return `${baseUrl}${separator}includeHidden=true`;
+  };
+
+  const loadLayout = async (targetUsername?: string) => {
     try {
       setLoading(true);
-      const response = await apiRequest(`${API_ENDPOINTS.LAYOUT}?includeHidden=true`, {
+      const usernameToUse = targetUsername ?? username ?? undefined;
+      const response = await apiRequest(buildLayoutUrl(usernameToUse), {
         method: "GET",
         cache: "no-store",
       });
@@ -78,7 +87,7 @@ export default function LayoutBuilder() {
             const retryAfter = Number(parsed?.retryAfter ?? 15);
             showMessage("error", parsed?.message || "จำนวนคำขอเกินจำกัด กรุณาลองใหม่");
             if (Number.isFinite(retryAfter) && retryAfter > 0) {
-              setTimeout(loadLayout, retryAfter * 1000);
+              setTimeout(() => loadLayout(usernameToUse), retryAfter * 1000);
             }
           } catch {
             showMessage("error", "จำนวนคำขอเกินจำกัด กรุณาลองใหม่");
@@ -118,7 +127,10 @@ export default function LayoutBuilder() {
 
       // บันทึก widgets ทั้งหมด
       for (const widget of widgets) {
-        const response = await apiRequest(API_ENDPOINTS.WIDGETS, {
+        const widgetsEndpoint = username
+          ? API_ENDPOINTS.WIDGETS_USERNAME(username)
+          : API_ENDPOINTS.WIDGETS;
+        const response = await apiRequest(widgetsEndpoint, {
           method: "PUT",
           body: JSON.stringify({
             id: widget.id,
@@ -153,7 +165,7 @@ export default function LayoutBuilder() {
       }
 
       showMessage("success", "✅ บันทึกสำเร็จ!");
-      await loadLayout(); // โหลดใหม่
+      await loadLayout(username ?? undefined); // โหลดใหม่
     } catch (error) {
       console.error("Error saving:", error);
       showMessage("error", "❌ เกิดข้อผิดพลาดในการบันทึก");
@@ -222,6 +234,10 @@ export default function LayoutBuilder() {
     if (!selectedWidget || !e.target.files || e.target.files.length === 0) return;
 
     const file = e.target.files[0];
+    if (!username) {
+      showMessage("error", "❌ ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง");
+      return;
+    }
     
     // ตรวจสอบประเภทไฟล์
     if (!file.type.startsWith("image/")) {
@@ -318,11 +334,13 @@ export default function LayoutBuilder() {
           // สร้าง FormData จาก compressed blob
           const formData = new FormData();
           formData.append("file", compressedBlob, file.name);
+          formData.append("owner", username);
 
           // สร้าง URL พร้อม widgetId query parameter
+          const ownerQuery = `owner=${encodeURIComponent(username)}`;
           const uploadUrl = selectedWidget.id 
-            ? `${API_ENDPOINTS.UPLOAD_WIDGET}?widgetId=${selectedWidget.id}`
-            : API_ENDPOINTS.UPLOAD_WIDGET;
+            ? `${API_ENDPOINTS.UPLOAD_WIDGET}?widgetId=${selectedWidget.id}&${ownerQuery}`
+            : `${API_ENDPOINTS.UPLOAD_WIDGET}?${ownerQuery}`;
 
           // อัปโหลดไปยัง backend โดยใช้ endpoint สำหรับ widget
           const response = await apiRequest(uploadUrl, {
@@ -365,7 +383,7 @@ export default function LayoutBuilder() {
               w.id === selectedWidget.id ? { ...w, imageUrl: imageUrl } : w
             ));
             
-            showMessage("success", "✅ อัปโหลดรูปภาพสำเร็จและบันทึกลงฐานข้อมูลแล้ว!");
+            showMessage("success", "✅ อัปโหลดรูปภาพส่วนตัวสำเร็จและบันทึกลงฐานข้อมูลแล้ว!");
           } else {
             showMessage("error", "❌ เกิดข้อผิดพลาดในการอัปโหลด: ไม่ได้รับ URL รูปภาพ");
           }

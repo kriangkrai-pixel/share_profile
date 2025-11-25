@@ -33,16 +33,16 @@ CREATE TABLE IF NOT EXISTS `PageContent` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Add new columns to existing tables (make them nullable first)
-ALTER TABLE `Skill` ADD COLUMN IF NOT EXISTS `pageContentId` INTEGER NULL;
-ALTER TABLE `Education` ADD COLUMN IF NOT EXISTS `pageContentId` INTEGER NULL;
-ALTER TABLE `Experience` ADD COLUMN IF NOT EXISTS `pageContentId` INTEGER NULL;
-ALTER TABLE `Portfolio` ADD COLUMN IF NOT EXISTS `pageContentId` INTEGER NULL;
+ALTER TABLE `Skill` ADD COLUMN `pageContentId` INTEGER NULL;
+ALTER TABLE `Education` ADD COLUMN `pageContentId` INTEGER NULL;
+ALTER TABLE `Experience` ADD COLUMN `pageContentId` INTEGER NULL;
+ALTER TABLE `Portfolio` ADD COLUMN `pageContentId` INTEGER NULL;
 
 -- CreateIndex
-CREATE INDEX IF NOT EXISTS `Skill_pageContentId_idx` ON `Skill`(`pageContentId`);
-CREATE INDEX IF NOT EXISTS `Education_pageContentId_idx` ON `Education`(`pageContentId`);
-CREATE INDEX IF NOT EXISTS `Experience_pageContentId_idx` ON `Experience`(`pageContentId`);
-CREATE INDEX IF NOT EXISTS `Portfolio_pageContentId_idx` ON `Portfolio`(`pageContentId`);
+CREATE INDEX `Skill_pageContentId_idx` ON `Skill`(`pageContentId`);
+CREATE INDEX `Education_pageContentId_idx` ON `Education`(`pageContentId`);
+CREATE INDEX `Experience_pageContentId_idx` ON `Experience`(`pageContentId`);
+CREATE INDEX `Portfolio_pageContentId_idx` ON `Portfolio`(`pageContentId`);
 
 -- AddForeignKey (only if the foreign key doesn't exist)
 -- Note: MySQL doesn't support IF NOT EXISTS for foreign keys, so we'll need to handle errors

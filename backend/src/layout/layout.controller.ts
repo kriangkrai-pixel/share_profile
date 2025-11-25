@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { LayoutService } from './layout.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -10,12 +10,16 @@ export class LayoutController {
    * GET /api/layout
    * ดึงข้อมูล Layout ที่ใช้งานอยู่
    * Query parameter: includeHidden=true เพื่อดึง widgets ที่ซ่อนอยู่ด้วย (สำหรับ admin)
+   * Query parameter: username=xxx เพื่อดึง layout ของ user นั้นๆ
    */
   @Get()
-  async getLayout(@Query('includeHidden') includeHidden?: string) {
+  async getLayout(
+    @Query('includeHidden') includeHidden?: string,
+    @Query('username') username?: string,
+  ) {
     const includeHiddenBool = includeHidden === 'true';
-    console.log(`📋 Fetching active layout (includeHidden: ${includeHiddenBool})`);
-    return this.layoutService.getActiveLayout(includeHiddenBool);
+    console.log(`📋 Fetching layout for user: ${username || 'default'} (includeHidden: ${includeHiddenBool})`);
+    return this.layoutService.getActiveLayout(includeHiddenBool, username);
   }
 
   /**
@@ -25,9 +29,10 @@ export class LayoutController {
    */
   @Post()
   @UseGuards(JwtAuthGuard)
-  async createLayout(@Body() data: { name?: string }) {
-    console.log(`➕ Creating new layout: ${data.name || 'Unnamed'}`);
-    return this.layoutService.createLayout(data.name);
+  async createLayout(@Request() req: any, @Body() data: { name?: string }) {
+    const userId = req.user?.userId;
+    console.log(`➕ Creating new layout: ${data.name || 'Unnamed'} for user: ${userId || 'unknown'}`);
+    return this.layoutService.createLayout(data.name, userId);
   }
 
   /**

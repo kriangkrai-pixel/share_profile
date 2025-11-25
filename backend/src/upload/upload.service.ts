@@ -5,7 +5,7 @@ import { S3Service } from './s3.service';
 export class UploadService {
   constructor(private readonly s3Service: S3Service) {}
 
-  async uploadFile(file: Express.Multer.File, type: string) {
+  async uploadFile(file: Express.Multer.File, type: string, owner?: string) {
     if (!file) {
       throw new BadRequestException('No file provided');
     }
@@ -36,7 +36,8 @@ export class UploadService {
     }
 
     // อัปโหลดไปยัง DigitalOcean Spaces (return relative path)
-    const relativePath = await this.s3Service.uploadFile(file, type);
+    // ส่ง owner ไปด้วยเพื่อแยก path ตาม user
+    const relativePath = await this.s3Service.uploadFile(file, type, owner);
 
     // แปลง relative path เป็น proxy URL สำหรับ frontend
     const proxyUrl = this.s3Service.getProxyUrl(relativePath);

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useProfile } from "./context/ProfileContext";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
 import { getUsernameFromToken } from "@/lib/jwt-utils";
@@ -51,11 +52,72 @@ interface ThemeSettings {
   footerTextColor: string;
 }
 
+type ProfileModel = ReturnType<typeof useProfile>["profile"];
+
+const extractHexColor = (color?: string | null) => {
+  if (!color) return null;
+  const match = color.match(/#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})/i);
+  return match ? match[0] : null;
+};
+
+const hexToRgb = (hex: string) => {
+  let normalized = hex.replace("#", "");
+  if (normalized.length === 3) {
+    normalized = normalized
+      .split("")
+      .map((char) => char + char)
+      .join("");
+  } else if (normalized.length === 8) {
+    normalized = normalized.substring(0, 6);
+  }
+  const num = parseInt(normalized, 16);
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255,
+  };
+};
+
+const getReadableTextColor = (background?: string | null) => {
+  const hex = extractHexColor(background);
+  if (!hex) return "#0f172a";
+  const { r, g, b } = hexToRgb(hex);
+  const [sr, sg, sb] = [r, g, b].map((channel) => {
+    const c = channel / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  const luminance = 0.2126 * sr + 0.7152 * sg + 0.0722 * sb;
+  return luminance > 0.5 ? "#0f172a" : "#ffffff";
+};
+
+const buildButtonStyle = (background?: string | null, options?: { outline?: boolean }) => {
+  const baseColor = extractHexColor(background) || "#111827";
+  if (options?.outline) {
+    return {
+      backgroundColor: "transparent",
+      color: baseColor,
+      borderColor: baseColor,
+    };
+  }
+  const textColor = getReadableTextColor(baseColor);
+  return {
+    backgroundColor: baseColor,
+    color: textColor,
+    borderColor: baseColor,
+  };
+};
+
 export default function Home() {
-  const { profile, refreshProfile } = useProfile();
+  const searchParams = useSearchParams();
+  const sharedUsernameParam = searchParams?.get("username");
+  const normalizedSharedUsername = sharedUsernameParam ? sharedUsernameParam.trim() : null;
+  const { profile: baseProfile, refreshProfile } = useProfile();
+  const [sharedProfile, setSharedProfile] = useState<ProfileModel | null>(null);
+  const profile = sharedProfile || baseProfile;
   const [layout, setLayout] = useState<Layout | null>(null);
   const [loadingLayout, setLoadingLayout] = useState(true);
   const [loggedInUserName, setLoggedInUserName] = useState<string | null>(null);
+  const [ownerUsername, setOwnerUsername] = useState<string | null>(null);
   
   // State สำหรับ Theme Settings
   const [theme, setTheme] = useState<ThemeSettings>({
@@ -65,7 +127,9 @@ export default function Home() {
     backgroundColor: "#ffffff",
     textColor: "#1f2937",
     headerBgColor: "#ffffff",
+    headerTextColor: "#1f2937",
     footerBgColor: "#1f2937",
+    footerTextColor: "#ffffff",
   });
   
   // State สำหรับฟอร์มติดต่อ
@@ -78,9 +142,14 @@ export default function Home() {
   
   // State สำหรับ showAll ของ Portfolio (แยกตาม widget id)
   const [portfolioShowAll, setPortfolioShowAll] = useState<Record<number, boolean>>({});
+  useEffect(() => {
+    setPortfolioShowAll({});
+  }, [normalizedSharedUsername]);
 
   // โหลด Layout และ Theme จาก API (Optimized: Parallel + Cache)
   useEffect(() => {
+    const targetOwner = normalizedSharedUsername || null;
+
     const loadLayout = async () => {
       try {
         console.log("🔄 Loading layout from:", API_ENDPOINTS.LAYOUT);
@@ -88,9 +157,25 @@ export default function Home() {
           method: "GET",
           credentials: "include",
           cache: "no-store",
+          retryOn429: true,
+          maxRetries: 2,
         });
         
         if (!response.ok) {
+          // If still 429 after retries, show user-friendly message
+          if (response.status === 429) {
+            try {
+              const errorData = await response.json().catch(() => ({}));
+              const retryAfter = errorData?.retryAfter || 60;
+              console.warn(`⚠️ Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`);
+              // Don't set layout to null, keep existing layout if available
+              return;
+            } catch {
+              console.warn("⚠️ Rate limit exceeded. Please wait before trying again.");
+              return;
+            }
+          }
+          
           const errorText = await response.text().catch(() => "Unknown error");
           console.error(`❌ Failed to load layout: ${response.status} ${response.statusText}`, errorText);
           setLayout(null);
@@ -117,20 +202,17 @@ export default function Home() {
       }
     };
 
-    const loadTheme = async () => {
+    const loadTheme = async (owner?: string | null) => {
       try {
-        // ตรวจสอบว่ามี token หรือไม่
-        const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
-        
-        if (token) {
-          // ถ้ามี token ให้โหลด theme preferences ของ user
-          console.log("🎨 Loading theme from:", API_ENDPOINTS.THEME_ME);
-          const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
+        if (owner) {
+          console.log("🎨 Loading theme for owner:", owner);
+          const response = await apiRequest(API_ENDPOINTS.THEME_USERNAME(owner), {
             method: "GET",
-            credentials: "include",
             cache: "no-store",
+            retryOn429: true,
+            maxRetries: 2,
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             if (data && !data.error) {
@@ -147,10 +229,46 @@ export default function Home() {
               });
               return;
             }
+          } else if (response.status === 429) {
+            // Rate limit - use default theme, will retry automatically
+            console.warn("⚠️ Rate limit exceeded while loading theme, using default");
+          }
+        } else {
+          const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
+          
+          if (token) {
+            console.log("🎨 Loading theme from:", API_ENDPOINTS.THEME_ME);
+            const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store",
+              retryOn429: true,
+              maxRetries: 2,
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data && !data.error) {
+                setTheme({
+                  primaryColor: data.primaryColor || "#3b82f6",
+                  secondaryColor: data.secondaryColor || "#8b5cf6",
+                  accentColor: data.accentColor || "#10b981",
+                  backgroundColor: data.backgroundColor || "#ffffff",
+                  textColor: data.textColor || "#1f2937",
+                  headerBgColor: data.headerBgColor || "#ffffff",
+                  headerTextColor: data.headerTextColor || "#1f2937",
+                  footerBgColor: data.footerBgColor || "#1f2937",
+                  footerTextColor: data.footerTextColor || "#ffffff",
+                });
+                return;
+              }
+            } else if (response.status === 429) {
+              // Rate limit - use default theme, will retry automatically
+              console.warn("⚠️ Rate limit exceeded while loading theme, using default");
+            }
           }
         }
         
-        // ถ้าไม่มี token หรือโหลดไม่สำเร็จ ให้ใช้ default theme
         console.log("🎨 Using default theme");
         setTheme({
           primaryColor: "#3b82f6",
@@ -185,12 +303,19 @@ export default function Home() {
     };
 
     // ตรวจสอบว่ามี user ล็อกอินอยู่หรือไม่
-    const loadLoggedInUser = async () => {
+    const loadLoggedInUser = async (owner?: string | null) => {
+      if (owner) {
+        setOwnerUsername(owner);
+        setLoggedInUserName(null);
+        return;
+      }
+
       const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
       if (token) {
         // ดึง username จาก token
         const username = getUsernameFromToken();
         if (username) {
+          setOwnerUsername(username);
           // ถ้ามี token ให้ดึงข้อมูล user จาก API
           try {
             const response = await apiRequest(API_ENDPOINTS.CONTENT_ME, {
@@ -208,19 +333,58 @@ export default function Home() {
             setLoggedInUserName(username);
           }
         }
+      } else {
+        setOwnerUsername(null);
+        setLoggedInUserName(null);
       }
+    };
+
+    const loadOwnerProfile = async (owner?: string | null) => {
+      if (!owner) {
+        setSharedProfile(null);
+        return;
+      }
+
+      try {
+        const response = await apiRequest(API_ENDPOINTS.CONTENT_USERNAME(owner), {
+          method: "GET",
+          cache: "no-store",
+          retryOn429: true,
+          maxRetries: 2,
+        });
+
+        if (!response.ok) {
+          if (response.status === 429) {
+            console.warn("⚠️ Rate limit exceeded while loading owner profile");
+            // Keep existing profile if available
+            return;
+          }
+          throw new Error(`Failed to load owner profile (${response.status})`);
+        }
+
+        const data = await response.json();
+        if (data && !data.error) {
+          setSharedProfile(data as ProfileModel);
+          return;
+        }
+      } catch (error) {
+        console.error("❌ Error loading owner profile:", error);
+      }
+
+      setSharedProfile(null);
     };
 
     // โหลดข้อมูลทั้งหมดพร้อมกัน (Parallel Loading)
     Promise.all([
       loadLayout(),
-      loadTheme(),
+      loadTheme(targetOwner),
       refreshProfile(),
-      loadLoggedInUser()
+      loadLoggedInUser(targetOwner),
+      loadOwnerProfile(targetOwner),
     ]).finally(() => {
       setLoadingLayout(false);
     });
-  }, []);
+  }, [normalizedSharedUsername, refreshProfile]);
 
   // Apply Theme CSS Variables
   useEffect(() => {
@@ -237,6 +401,30 @@ export default function Home() {
     }
   }, [theme]);
 
+  // Hide global Header/Footer on landing page
+  useEffect(() => {
+    const headerEl = document.querySelector("header");
+    const footerEl = document.querySelector("footer");
+    const previousHeaderDisplay = headerEl?.style.display;
+    const previousFooterDisplay = footerEl?.style.display;
+
+    if (headerEl) {
+      headerEl.style.display = "none";
+    }
+    if (footerEl) {
+      footerEl.style.display = "none";
+    }
+
+    return () => {
+      if (headerEl) {
+        headerEl.style.display = previousHeaderDisplay || "";
+      }
+      if (footerEl) {
+        footerEl.style.display = previousFooterDisplay || "";
+      }
+    };
+  }, []);
+
   // Listen for profile updates และ refresh ข้อมูลทันที
   useEffect(() => {
     const handleProfileUpdate = async () => {
@@ -248,11 +436,19 @@ export default function Home() {
     return () => window.removeEventListener("profileUpdated", handleProfileUpdate);
   }, [refreshProfile]);
 
-  // Refresh เมื่อหน้ามี focus (Optimized: โหลดเฉพาะเมื่อเกิน 5 นาที)
+  // Refresh เมื่อหน้ามี focus (Optimized: โหลดเฉพาะเมื่อเกิน 5 นาที + Throttling)
   useEffect(() => {
     let lastFetchTime = Date.now();
+    let isRefreshing = false; // Prevent concurrent refreshes
+    const ownerParam = normalizedSharedUsername || null;
     
     const handleFocus = async () => {
+      // Prevent concurrent refresh operations
+      if (isRefreshing) {
+        console.log("⚡ Refresh already in progress, skipping...");
+        return;
+      }
+      
       const now = Date.now();
       const fiveMinutes = 5 * 60 * 1000; // 5 นาที
       
@@ -264,6 +460,7 @@ export default function Home() {
       
       console.log("🔄 Reloading data after 5 minutes...");
       lastFetchTime = now;
+      isRefreshing = true;
       
       // โหลด Layout ใหม่
       const loadLayout = async () => {
@@ -272,9 +469,16 @@ export default function Home() {
             method: "GET",
             credentials: "include",
             cache: "no-store",
+            retryOn429: true,
+            maxRetries: 1, // Only 1 retry for background refresh
           });
           
           if (!response.ok) {
+            // Silently handle 429 for background refresh
+            if (response.status === 429) {
+              console.warn("⚠️ Rate limit exceeded during background refresh. Will retry later.");
+              return;
+            }
             const errorText = await response.text().catch(() => "Unknown error");
             console.warn(`⚠️ Failed to reload layout: ${response.status} ${response.statusText}`, errorText);
             return;
@@ -298,17 +502,14 @@ export default function Home() {
       // โหลด Theme ใหม่
       const loadTheme = async () => {
         try {
-          // ตรวจสอบว่ามี token หรือไม่
-          const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
-          
-          if (token) {
-            // ถ้ามี token ให้โหลด theme preferences ของ user
-            const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
+          if (ownerParam) {
+            const response = await apiRequest(API_ENDPOINTS.THEME_USERNAME(ownerParam), {
               method: "GET",
-              credentials: "include",
               cache: "no-store",
+              retryOn429: true,
+              maxRetries: 1,
             });
-            
+
             if (response.ok) {
               const data = await response.json();
               if (data && !data.error) {
@@ -325,10 +526,47 @@ export default function Home() {
                 });
                 return;
               }
+            } else if (response.status === 429) {
+              console.warn("⚠️ Rate limit exceeded during theme refresh");
+              return;
+            }
+          } else {
+            // ตรวจสอบว่ามี token หรือไม่
+            const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
+            
+            if (token) {
+              // ถ้ามี token ให้โหลด theme preferences ของ user
+              const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
+                method: "GET",
+                credentials: "include",
+                cache: "no-store",
+                retryOn429: true,
+                maxRetries: 1,
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data && !data.error) {
+                  setTheme({
+                    primaryColor: data.primaryColor || "#3b82f6",
+                    secondaryColor: data.secondaryColor || "#8b5cf6",
+                    accentColor: data.accentColor || "#10b981",
+                    backgroundColor: data.backgroundColor || "#ffffff",
+                    textColor: data.textColor || "#1f2937",
+                    headerBgColor: data.headerBgColor || "#ffffff",
+                    headerTextColor: data.headerTextColor || "#1f2937",
+                    footerBgColor: data.footerBgColor || "#1f2937",
+                    footerTextColor: data.footerTextColor || "#ffffff",
+                  });
+                  return;
+                }
+              } else if (response.status === 429) {
+                console.warn("⚠️ Rate limit exceeded during theme refresh");
+                return;
+              }
             }
           }
           
-          // ถ้าไม่มี token หรือโหลดไม่สำเร็จ ให้ใช้ default theme
           setTheme({
             primaryColor: "#3b82f6",
             secondaryColor: "#8b5cf6",
@@ -347,18 +585,83 @@ export default function Home() {
           }
         }
       };
+
+      const loadOwnerProfile = async () => {
+        if (!ownerParam) {
+          return;
+        }
+        try {
+          const response = await apiRequest(API_ENDPOINTS.CONTENT_USERNAME(ownerParam), {
+            method: "GET",
+            cache: "no-store",
+            retryOn429: true,
+            maxRetries: 1,
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data && !data.error) {
+              setSharedProfile(data as ProfileModel);
+              return;
+            }
+          } else if (response.status === 429) {
+            console.warn("⚠️ Rate limit exceeded during profile refresh");
+            return;
+          }
+        } catch (error) {
+          console.error("❌ Error refreshing owner profile:", error);
+        }
+      };
+
+      const refreshOwnerState = async () => {
+        if (ownerParam) {
+          return;
+        }
+        const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
+        if (token) {
+          const username = getUsernameFromToken();
+          if (username) {
+            setOwnerUsername(username);
+          }
+        } else {
+          setOwnerUsername(null);
+          setLoggedInUserName(null);
+        }
+      };
       
       // โหลดพร้อมกัน
-      await Promise.all([
-        loadLayout(),
-        loadTheme(),
-        refreshProfile()
-      ]);
+      try {
+        await Promise.all([
+          loadLayout(),
+          loadTheme(),
+          refreshProfile(),
+          loadOwnerProfile(),
+          refreshOwnerState(),
+        ]);
+      } finally {
+        isRefreshing = false;
+      }
     };
 
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [refreshProfile]);
+    // Throttle focus events - only process one per 10 seconds
+    let focusTimeout: NodeJS.Timeout | null = null;
+    const throttledHandleFocus = () => {
+      if (focusTimeout) {
+        return; // Already scheduled
+      }
+      focusTimeout = setTimeout(() => {
+        handleFocus();
+        focusTimeout = null;
+      }, 10000); // Wait 10 seconds before processing focus
+    };
+
+    window.addEventListener("focus", throttledHandleFocus);
+    return () => {
+      window.removeEventListener("focus", throttledHandleFocus);
+      if (focusTimeout) {
+        clearTimeout(focusTimeout);
+      }
+    };
+  }, [refreshProfile, normalizedSharedUsername]);
 
   // ฟังก์ชันส่งข้อความติดต่อ
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -366,6 +669,11 @@ export default function Home() {
     
     if (!contactForm.name || !contactForm.email || !contactForm.message) {
       alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+      return;
+    }
+
+    if (!ownerUsername) {
+      alert("ไม่สามารถระบุเจ้าของโปรไฟล์ได้ กรุณาเข้าสู่ระบบก่อนส่งข้อความ");
       return;
     }
 
@@ -378,6 +686,7 @@ export default function Home() {
           name: contactForm.name,
           email: contactForm.email,
           message: contactForm.message,
+          username: ownerUsername,
         }),
       });
 
@@ -508,6 +817,234 @@ export default function Home() {
       default:
         return null;
     }
+  };
+
+  const renderPromoHero = () => {
+    const sellingPoints = [
+      "ลากวางวิดเจ็ตได้อย่างอิสระ",
+      "ธีมสวยงามปรับแต่งได้",
+      "แสดงผลงานและประวัติครบจบที่เดียว",
+    ];
+    const primaryBtnStyle = {
+      ...buildButtonStyle(theme.accentColor || theme.primaryColor),
+      boxShadow: "0 15px 35px rgba(0,0,0,0.2)",
+    };
+    const secondaryBtnStyle = {
+      ...buildButtonStyle("#ffffff"),
+      boxShadow: "0 12px 30px rgba(0,0,0,0.15)",
+    };
+
+    return (
+      <section
+        className="relative overflow-hidden px-6 md:px-20 py-20"
+        style={{
+          background: `linear-gradient(135deg, ${theme.primaryColor} 0%, ${theme.secondaryColor} 60%, ${theme.accentColor} 100%)`,
+          color: "#ffffff",
+        }}
+      >
+        <div className="absolute inset-0 opacity-20 pointer-events-none bg-grid-white"></div>
+        <div className="max-w-6xl mx-auto relative z-10 grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-12 items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 rounded-full text-sm font-semibold backdrop-blur">
+              <span>🚀</span>
+              <span>ShareProfile Platform</span>
+            </div>
+            <h1 className="mt-6 text-4xl md:text-5xl font-bold leading-tight">
+              สร้างโปรไฟล์ออนไลน์ระดับมืออาชีพในไม่กี่นาที
+            </h1>
+            <p className="mt-5 text-lg md:text-xl text-white/90 leading-relaxed">
+              จัดระเบียบตัวตนดิจิทัลของคุณ นำเสนอผลงาน ประวัติการทำงาน และช่องทางติดต่อ
+              ทั้งหมดในลิงก์เดียว พร้อมระบบปรับแต่งที่ยืดหยุ่นและใช้งานได้ทั้งบนเดสก์ท็อปและมือถือ
+            </p>
+            <div className="mt-8 flex flex-col sm:flex-row gap-4">
+              <Link
+                href="/admin/login"
+                className="btn-primary font-semibold px-8 py-4 rounded-2xl transition-transform text-center hover:-translate-y-1"
+                style={primaryBtnStyle}
+              >
+                เข้าสู่ระบบ
+              </Link>
+              <Link
+                href="/register"
+                className="btn-outline-primary border-2 px-8 py-4 rounded-2xl font-semibold transition-transform text-center hover:-translate-y-1"
+                style={{ ...secondaryBtnStyle, borderColor: "#ffffff" }}
+              >
+                สมัครสมาชิกฟรี
+              </Link>
+            </div>
+            <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {sellingPoints.map((point) => (
+                <div
+                  key={point}
+                  className="flex items-center gap-3 bg-white/10 border border-white/20 rounded-2xl px-4 py-3 backdrop-blur hover:bg-white/15 transition-colors"
+                >
+                  <span className="text-2xl">✨</span>
+                  <p className="text-sm font-medium">{point}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -inset-4 bg-white/10 rounded-3xl blur-3xl"></div>
+            <div className="relative bg-white text-gray-900 rounded-3xl p-8 shadow-2xl border border-white/40">
+              <p className="text-sm font-semibold text-primary mb-4">แผงควบคุมแบบเรียลไทม์</p>
+              <ul className="space-y-4">
+                <li className="flex items-start gap-3">
+                  <span className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                    1
+                  </span>
+                  <div>
+                    <p className="font-semibold">เลือกเทมเพลตที่ใช่</p>
+                    <p className="text-sm text-gray-500">ปรับแต่งสี ฟอนต์ และรูปภาพให้ตรงกับตัวตน</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                    2
+                  </span>
+                  <div>
+                    <p className="font-semibold">จัดวางวิดเจ็ต</p>
+                    <p className="text-sm text-gray-500">ลากวาง Hero, Portfolio, Experience และอื่นๆ ได้ตามใจ</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                    3
+                  </span>
+                  <div>
+                    <p className="font-semibold">แชร์ลิงก์เดียว</p>
+                    <p className="text-sm text-gray-500">เชื่อมต่อโอกาสใหม่ๆ ด้วยโปรไฟล์ที่พร้อมใช้งานทันที</p>
+                  </div>
+                </li>
+              </ul>
+              <div className="mt-8 rounded-2xl border border-dashed border-gray-200 p-4 text-center">
+                <p className="text-sm font-semibold text-primary">พร้อมเริ่มต้นหรือยัง?</p>
+                <p className="text-xl font-bold mt-1">เริ่มสร้างโปรไฟล์วันนี้ ฟรี!</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const renderPromoHighlights = () => {
+    const features = [
+      {
+        title: "ระบบ Layout Builder",
+        description: "จัดเรียงส่วนประกอบด้วย Grid drag & drop พร้อมบันทึกหลาย Layout",
+        icon: "🧩",
+      },
+      {
+        title: "เครื่องมือ Theme ขั้นสูง",
+        description: "กำหนดสี ปุ่ม ฟอนต์ และองค์ประกอบให้เข้ากับแบรนด์ของคุณแบบเรียลไทม์",
+        icon: "🎨",
+      },
+      {
+        title: "หน้า Portfolio พร้อมลิงก์",
+        description: "โชว์ผลงานพร้อมปุ่มลิงก์ไปยังโค้ดหรือเดโม รองรับทั้งวิดีโอและรูปภาพ",
+        icon: "💼",
+      },
+      {
+        title: "ฟอร์มติดต่ออัจฉริยะ",
+        description: "ลูกค้าติดต่อคุณได้ทันที ระบบจัดเก็บข้อความและแจ้งเตือน",
+        icon: "📨",
+      },
+    ];
+
+    return (
+      <section className="px-6 md:px-20 py-16" style={{ backgroundColor: theme.backgroundColor }}>
+        <div className="max-w-6xl mx-auto">
+          <div className="md:flex items-center justify-between mb-12 text-center md:text-left">
+            <div>
+              <p className="text-primary font-semibold uppercase tracking-wide">ทำไมต้อง ShareProfile</p>
+              <h2 className="mt-2 text-3xl md:text-4xl font-bold" style={{ color: theme.textColor }}>
+                ทุกสิ่งที่คุณต้องการเพื่อสร้างตัวตนดิจิทัล
+              </h2>
+            </div>
+            <div className="mt-6 md:mt-0">
+              <Link
+                href="/register"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-full font-semibold shadow-lg transition-transform hover:-translate-y-1"
+                style={buildButtonStyle(theme.primaryColor)}
+              >
+                สมัครใช้งานตอนนี้
+                <span>↗</span>
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {features.map((feature) => (
+              <div
+                key={feature.title}
+                className="p-6 rounded-2xl border bg-white shadow-sm hover:-translate-y-1 hover:shadow-xl transition-all"
+                style={{ borderColor: `${theme.primaryColor}20` }}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{ backgroundColor: `${theme.primaryColor}10` }}>
+                    {feature.icon}
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold" style={{ color: theme.textColor }}>
+                      {feature.title}
+                    </h3>
+                    <p className="mt-2 text-sm leading-relaxed text-gray-600">{feature.description}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const renderPromoCTA = () => {
+    const registerBtnStyle = {
+      ...buildButtonStyle(theme.primaryColor),
+      boxShadow: "0 15px 35px rgba(0,0,0,0.15)",
+    };
+    const loginBtnStyle = {
+      ...buildButtonStyle("#ffffff"),
+      borderColor: theme.primaryColor,
+      color: theme.primaryColor,
+      boxShadow: "0 12px 30px rgba(0,0,0,0.1)",
+    };
+
+    return (
+      <section
+        className="px-6 md:px-20 py-16"
+        style={{ background: `linear-gradient(120deg, ${theme.backgroundColor}, ${theme.primaryColor}20)` }}
+      >
+        <div className="max-w-5xl mx-auto text-center bg-white rounded-3xl shadow-2xl p-10 border" style={{ borderColor: `${theme.primaryColor}30` }}>
+          <p className="text-sm font-semibold text-primary uppercase tracking-widest">พร้อมเริ่มแล้วหรือยัง?</p>
+          <h2 className="mt-4 text-3xl md:text-4xl font-bold" style={{ color: theme.textColor }}>
+            เริ่มต้นสร้างโปรไฟล์ที่โดดเด่น และเพิ่มโอกาสใหม่ๆ ให้ตัวคุณ
+          </h2>
+          <p className="mt-4 text-gray-600 leading-relaxed">
+            ใช้งานฟรี สมัครสมาชิกเพียงไม่กี่ขั้นตอน และอัปเกรดได้เมื่อคุณต้องการฟีเจอร์ขั้นสูงเพิ่มเติม
+          </p>
+          <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/register"
+              className="px-8 py-4 rounded-2xl font-semibold hover:-translate-y-1 transition-all text-center"
+              style={registerBtnStyle}
+            >
+              สมัครสมาชิกฟรี
+            </Link>
+            <Link
+              href="/admin/login"
+              className="px-8 py-4 rounded-2xl font-semibold border-2 hover:-translate-y-1 transition-all text-center"
+              style={loginBtnStyle}
+            >
+              ผู้ใช้เดิมเข้าสู่ระบบ
+            </Link>
+          </div>
+        </div>
+      </section>
+    );
   };
 
   const renderHeroSection = (widget: Widget) => {
@@ -1283,7 +1820,10 @@ export default function Home() {
 
     return (
       <main className="min-h-screen" style={{ backgroundColor: theme.backgroundColor, color: theme.textColor }}>
+        {renderPromoHero()}
+        {renderPromoHighlights()}
         {sortedWidgets.map((widget) => renderWidget(widget))}
+        {renderPromoCTA()}
       </main>
     );
   }
@@ -1291,6 +1831,8 @@ export default function Home() {
   // Fallback: แสดงหน้าเริ่มต้นถ้าไม่มี layout
   return (
     <main className="min-h-screen" style={{ backgroundColor: theme.backgroundColor, color: theme.textColor }}>
+      {renderPromoHero()}
+      {renderPromoHighlights()}
       <section className="flex items-center justify-center px-6 md:px-20 py-16 md:py-24">
         <div className="flex flex-col md:flex-row items-center justify-between w-full max-w-6xl gap-10">
           <div className="text-center md:text-left">
@@ -1344,6 +1886,7 @@ export default function Home() {
           </p>
         </div>
       </section>
+      {renderPromoCTA()}
     </main>
   );
 }

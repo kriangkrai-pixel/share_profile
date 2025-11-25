@@ -8,12 +8,22 @@ export class ContactService {
   constructor(private prisma: PrismaService) {}
 
   async createMessage(data: CreateContactDto) {
+    // หาเจ้าของโปรไฟล์จาก username
+    const recipient = await this.prisma.user.findUnique({
+      where: { username: data.username },
+    });
+
+    if (!recipient) {
+      throw new NotFoundException('ไม่พบเจ้าของโปรไฟล์ที่ระบุ');
+    }
+
     // Validation is handled by DTO decorators
     const contactMessage = await this.prisma.contactMessage.create({
       data: {
         name: data.name,
         email: data.email,
         message: data.message,
+        recipientId: recipient.id,
       },
     });
 
@@ -24,9 +34,12 @@ export class ContactService {
     };
   }
 
-  async getMessages(unreadOnly?: boolean) {
+  async getMessages(userId: number, unreadOnly?: boolean) {
     const messages = await this.prisma.contactMessage.findMany({
-      where: unreadOnly ? { isRead: false } : undefined,
+      where: {
+        recipientId: userId,
+        ...(unreadOnly ? { isRead: false } : {}),
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -35,8 +48,16 @@ export class ContactService {
     return messages;
   }
 
-  async updateMessage(data: UpdateMessageDto) {
+  async updateMessage(userId: number, data: UpdateMessageDto) {
     // Validation is handled by DTO decorators
+    const message = await this.prisma.contactMessage.findUnique({
+      where: { id: data.id },
+    });
+
+    if (!message || message.recipientId !== userId) {
+      throw new NotFoundException('ไม่พบข้อความนี้หรือคุณไม่มีสิทธิ์เข้าถึง');
+    }
+
     const updated = await this.prisma.contactMessage.update({
       where: { id: data.id },
       data: { isRead: data.isRead },
@@ -45,22 +66,20 @@ export class ContactService {
     return updated;
   }
 
-  async deleteMessage(id: number) {
-    // Validation is handled at controller level
-    try {
-      await this.prisma.contactMessage.delete({
-        where: { id },
-      });
+  async deleteMessage(userId: number, id: number) {
+    const message = await this.prisma.contactMessage.findUnique({
+      where: { id },
+    });
 
-      return { success: true };
-    } catch (error) {
-      // Prisma error code P2025 = Record not found
-      if (error.code === 'P2025') {
-        throw new NotFoundException(`ไม่พบข้อความที่ต้องการลบ (ID: ${id})`);
-      }
-      // Re-throw other errors
-      throw error;
+    if (!message || message.recipientId !== userId) {
+      throw new NotFoundException(`ไม่พบข้อความที่ต้องการลบ (ID: ${id})`);
     }
+
+    await this.prisma.contactMessage.delete({
+      where: { id },
+    });
+
+    return { success: true };
   }
 }
 

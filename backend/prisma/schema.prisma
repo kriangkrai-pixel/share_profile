@@ -21,7 +21,10 @@ model User {
   pageContent     PageContent?
   Profile         Profile?
   themePreference ThemePreference?
+  siteSettings    SiteSettings?
   editHistory     EditHistory[]
+  receivedMessages ContactMessage[]
+  layouts         Layout[]
 
   @@index([username])
 }
@@ -160,9 +163,14 @@ model Layout {
   id        Int      @id @default(autoincrement())
   name      String   @default("Default Layout")
   isActive  Boolean  @default(true)
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   widgets   Widget[]
+
+  @@index([userId])
+  @@index([isActive])
 }
 
 model Widget {
@@ -194,9 +202,12 @@ model ContactMessage {
   message   String   @db.Text
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+  recipientId Int?
+  recipient   User?    @relation(fields: [recipientId], references: [id], onDelete: SetNull)
 
   @@index([isRead])
   @@index([createdAt])
+  @@index([recipientId])
 }
 
 model SiteSettings {
@@ -220,7 +231,13 @@ model SiteSettings {
   footerDescription String? @db.Text // คำอธิบายใน Footer
   footerEmail       String  @default("email") // อีเมลใน Footer
   footerLocation    String  @default("location") // ที่อยู่ใน Footer
+  footerShowLocation Boolean @default(true)
+  footerShowEmail    Boolean @default(true)
+  footerShowPhone    Boolean @default(true)
   footerLinks       String? @db.Text // JSON array ของ links ใน Footer
+
+  userId   Int?   @unique
+  user     User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   updatedAt DateTime @updatedAt
 }

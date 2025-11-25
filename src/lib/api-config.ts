@@ -22,7 +22,9 @@ export const API_ENDPOINTS = {
   
   // Layout & Widgets
   LAYOUT: `${API_BASE_URL}/layout`,
+  LAYOUT_USERNAME: (username: string) => `${API_BASE_URL}/layout?username=${encodeURIComponent(username)}`,
   WIDGETS: `${API_BASE_URL}/widgets`,
+  WIDGETS_USERNAME: (username: string) => `${API_BASE_URL}/widgets?username=${encodeURIComponent(username)}`,
   
   // Theme Config
   THEME_DEFAULT: `${API_BASE_URL}/theme-config`,
@@ -33,6 +35,8 @@ export const API_ENDPOINTS = {
   
   // Settings
   SETTINGS: `${API_BASE_URL}/settings`,
+  SETTINGS_ME: `${API_BASE_URL}/settings/me`,
+  SETTINGS_USERNAME: (username: string) => `${API_BASE_URL}/settings/${username}`,
   
   // Upload
   UPLOAD: `${API_BASE_URL}/upload`,
@@ -85,9 +89,12 @@ export function isConnectionError(error: any): boolean {
 }
 
 // Helper function for making API calls with credentials and JWT token
-export async function apiRequest(url: string, options?: RequestInit) {
+// Includes automatic retry logic for 429 (Rate Limit) errors
+export async function apiRequest(url: string, options?: RequestInit & { retryOn429?: boolean; maxRetries?: number }) {
   const token = getAuthToken();
   const method = options?.method || 'GET';
+  const retryOn429 = options?.retryOn429 !== false; // Default to true
+  const maxRetries = options?.maxRetries ?? 3;
   
   // Check if body is FormData - if so, don't set Content-Type (browser will set it with boundary)
   const isFormData = options?.body instanceof FormData;
@@ -113,42 +120,87 @@ export async function apiRequest(url: string, options?: RequestInit) {
     ...(options?.cache && { cache: options.cache }),
   };
 
-  try {
-    const response = await fetch(url, defaultOptions);
-    return response;
-  } catch (error) {
-    // Enhanced error logging with connection error detection
-    if (isConnectionError(error)) {
-      // Enhanced error logging with more details
-      const errorDetails = {
-        message: 'Backend server may not be running or unreachable',
-        url,
-        method,
-        apiBaseUrl: API_BASE_URL,
-        suggestion: 'Please ensure the backend server is running on port 3001',
-      };
+  // Remove custom options before passing to fetch
+  const { retryOn429: _, maxRetries: __, ...fetchOptions } = defaultOptions as any;
+
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      const response = await fetch(url, fetchOptions);
       
-      // Log detailed error in development
-      if (process.env.NODE_ENV === 'development') {
-        console.error(`❌ Connection error for ${url}:`, errorDetails);
-        console.error(`💡 To start the backend server, run: cd backend && npm run start:dev`);
-      } else {
-        console.warn(`⚠️ Connection error: Backend server unreachable`);
+      // Handle 429 Rate Limit errors with automatic retry
+      if (response.status === 429 && retryOn429 && attempt < maxRetries) {
+        attempt++;
+        
+        // Try to get retryAfter from response headers or body
+        let retryAfterSeconds = 60; // Default to 60 seconds
+        
+        const retryAfterHeader = response.headers.get('Retry-After');
+        if (retryAfterHeader) {
+          const parsed = parseFloat(retryAfterHeader);
+          if (!isNaN(parsed) && parsed > 0) {
+            retryAfterSeconds = parsed;
+          }
+        } else {
+          // Try to parse from response body
+          try {
+            const errorText = await response.clone().text();
+            const errorData = JSON.parse(errorText);
+            if (errorData?.retryAfter && typeof errorData.retryAfter === 'number') {
+              retryAfterSeconds = errorData.retryAfter;
+            }
+          } catch {
+            // If parsing fails, use exponential backoff
+            retryAfterSeconds = Math.min(60, Math.pow(2, attempt) * 5);
+          }
+        }
+        
+        const waitMs = retryAfterSeconds * 1000;
+        console.warn(`⚠️ Rate limit exceeded (429) for ${url}. Retrying in ${retryAfterSeconds}s (attempt ${attempt}/${maxRetries})...`);
+        
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        continue; // Retry the request
       }
       
-      // Enhance error object with helpful information
-      const enhancedError = new Error(
-        `ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ (${url})`
-      ) as any;
-      enhancedError.originalError = error;
-      enhancedError.isConnectionError = true;
-      enhancedError.url = url;
-      enhancedError.apiBaseUrl = API_BASE_URL;
-      throw enhancedError;
-    } else {
-      console.error(`❌ API Request failed for ${url}:`, error);
+      return response;
+    } catch (error) {
+      // Enhanced error logging with connection error detection
+      if (isConnectionError(error)) {
+        // Enhanced error logging with more details
+        const errorDetails = {
+          message: 'Backend server may not be running or unreachable',
+          url,
+          method,
+          apiBaseUrl: API_BASE_URL,
+          suggestion: 'Please ensure the backend server is running on port 3001',
+        };
+        
+        // Log detailed error in development
+        if (process.env.NODE_ENV === 'development') {
+          console.error(`❌ Connection error for ${url}:`, errorDetails);
+          console.error(`💡 To start the backend server, run: cd backend && npm run start:dev`);
+        } else {
+          console.warn(`⚠️ Connection error: Backend server unreachable`);
+        }
+        
+        // Enhance error object with helpful information
+        const enhancedError = new Error(
+          `ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ (${url})`
+        ) as any;
+        enhancedError.originalError = error;
+        enhancedError.isConnectionError = true;
+        enhancedError.url = url;
+        enhancedError.apiBaseUrl = API_BASE_URL;
+        throw enhancedError;
+      } else {
+        console.error(`❌ API Request failed for ${url}:`, error);
+      }
+      throw error;
     }
-    throw error;
   }
+  
+  // If we've exhausted all retries, make one final attempt and return the response
+  const response = await fetch(url, fetchOptions);
+  return response;
 }
 

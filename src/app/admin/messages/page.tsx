@@ -33,6 +33,7 @@ interface ContactMessage {
   message: string;
   isRead: boolean;
   createdAt: string;
+  recipientId?: number | null;
 }
 
 type FilterType = "all" | "unread" | "read";
@@ -63,6 +64,13 @@ export default function MessagesPage() {
   /**
    * โหลดข้อความทั้งหมดจาก API
    */
+  const handleUnauthorized = () => {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("adminLoginTime");
+    router.push("/admin/login");
+  };
+
   const loadMessages = async () => {
     try {
       const response = await apiRequest(API_ENDPOINTS.CONTACT, {
@@ -71,6 +79,10 @@ export default function MessagesPage() {
       });
       
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          handleUnauthorized();
+          return;
+        }
         const errorText = await response.text().catch(() => "Unknown error");
         console.warn(`⚠️ Failed to load messages: ${response.status} ${response.statusText}`, errorText);
         setMessages([]);
@@ -119,6 +131,10 @@ export default function MessagesPage() {
           setSelectedMessage({ ...selectedMessage, isRead: !currentStatus });
         }
       } else {
+        if (response.status === 401 || response.status === 403) {
+          handleUnauthorized();
+          return;
+        }
         const errorText = await response.text().catch(() => "Unknown error");
         console.error(`❌ Failed to update message: ${response.status} ${response.statusText}`, errorText);
       }
@@ -148,6 +164,10 @@ export default function MessagesPage() {
         }
         alert("✅ ลบข้อความสำเร็จ!");
       } else {
+        if (response.status === 401 || response.status === 403) {
+          handleUnauthorized();
+          return;
+        }
         alert("❌ เกิดข้อผิดพลาดในการลบ");
       }
     } catch (error) {

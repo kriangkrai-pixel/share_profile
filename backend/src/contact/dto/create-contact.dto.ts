@@ -14,4 +14,7 @@ export class CreateContactDto {
 
   @IsNotEmpty({ message: 'กรุณากรอกข้อความ' })
   message: string;
+
+  @IsNotEmpty({ message: 'กรุณาระบุ username ของเจ้าของโปรไฟล์' })
+  username: string;
 }

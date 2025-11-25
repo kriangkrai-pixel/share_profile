@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Service } from '../upload/s3.service';
 
@@ -8,6 +9,29 @@ export class LayoutService {
     private prisma: PrismaService,
     private s3Service: S3Service,
   ) {}
+
+  private buildWidgetsInclude(widgetsWhere: Prisma.WidgetWhereInput): Prisma.LayoutInclude {
+    return {
+      widgets: {
+        where: widgetsWhere,
+        orderBy: { order: 'asc' as const },
+        select: {
+          id: true,
+          type: true,
+          title: true,
+          content: true,
+          imageUrl: true,
+          x: true,
+          y: true,
+          w: true,
+          h: true,
+          order: true,
+          isVisible: true,
+          settings: true,
+        },
+      },
+    };
+  }
 
   /**
    * แปลง image URL/path เป็น proxy URL
@@ -62,40 +86,38 @@ export class LayoutService {
     return this.s3Service.getProxyUrl(relativePath);
   }
 
-  async getActiveLayout(includeHidden: boolean = false) {
+  async getActiveLayout(includeHidden: boolean = false, username?: string) {
     // สร้าง where clause สำหรับ widgets ตาม includeHidden
-    const widgetsWhere = includeHidden ? {} : { isVisible: true };
-    
+    const widgetsWhere: Prisma.WidgetWhereInput = includeHidden ? {} : { isVisible: true };
+    const widgetsInclude = this.buildWidgetsInclude(widgetsWhere);
+
+    // ถ้ามี username ให้หา user ก่อน
+    let userId: number | undefined;
+    if (username) {
+      const user = await this.prisma.user.findUnique({
+        where: { username },
+        select: { id: true },
+      });
+      if (user) {
+        userId = user.id;
+      }
+    }
+
+    // หา layout ตาม userId หรือ fallback เป็น default (userId = null)
     let layout = await this.prisma.layout.findFirst({
-      where: { isActive: true },
-      include: {
-        widgets: {
-          where: widgetsWhere,
-          orderBy: { order: 'asc' },
-          select: {
-            id: true,
-            type: true,
-            title: true,
-            content: true,
-            imageUrl: true,
-            x: true,
-            y: true,
-            w: true,
-            h: true,
-            order: true,
-            isVisible: true,
-            settings: true,
-          },
-        },
-      },
+      where: userId 
+        ? { userId, isActive: true }
+        : { isActive: true, userId: null }, // สำหรับ backward compatibility
+      include: widgetsInclude,
     });
 
     if (!layout) {
-      // สร้าง default layout ถ้ายังไม่มี
+      // สร้าง default layout สำหรับ user นั้น (ถ้ามี userId) หรือ global default
       layout = await this.prisma.layout.create({
         data: {
-          name: 'Default Layout',
+          name: username ? `${username}'s Layout` : 'Default Layout',
           isActive: true,
+          userId: userId || null,
           widgets: {
             create: [
               {
@@ -151,11 +173,7 @@ export class LayoutService {
             ],
           },
         },
-        include: {
-          widgets: {
-            orderBy: { order: 'asc' },
-          },
-        },
+        include: widgetsInclude,
       });
     }
 
@@ -228,11 +246,12 @@ export class LayoutService {
     return finalLayout;
   }
 
-  async createLayout(name?: string) {
+  async createLayout(name?: string, userId?: number) {
     const newLayout = await this.prisma.layout.create({
       data: {
         name: name || 'New Layout',
         isActive: false,
+        userId: userId || null,
       },
       include: {
         widgets: true,

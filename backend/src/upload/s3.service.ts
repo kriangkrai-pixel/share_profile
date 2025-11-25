@@ -65,9 +65,10 @@ export class S3Service {
    * อัปโหลดไฟล์ไปยัง DigitalOcean Spaces
    * @param file ไฟล์ที่ต้องการอัปโหลด
    * @param type ประเภทไฟล์ (profile, portfolio, widget)
-   * @returns relative path ของไฟล์ที่อัปโหลด (เช่น /uploads/portfolio/image.jpg)
+   * @param owner username หรือ user identifier สำหรับแยก path ตาม user
+   * @returns relative path ของไฟล์ที่อัปโหลด (เช่น /uploads/widget/username/image.jpg)
    */
-  async uploadFile(file: Express.Multer.File, type: string): Promise<string> {
+  async uploadFile(file: Express.Multer.File, type: string, owner?: string): Promise<string> {
     if (!file) {
       throw new Error('No file provided');
     }
@@ -80,7 +81,19 @@ export class S3Service {
 
     // สร้าง unique filename
     const uniqueFileName = this.generateUniqueFileName(file.originalname);
-    const key = `uploads/${type}/${uniqueFileName}`;
+    
+    // แยก path ตาม owner (user) สำหรับ widget type เท่านั้น
+    // profile และ portfolio อาจจะยังไม่ต้องแยก (ขึ้นอยู่กับความต้องการ)
+    let key: string;
+    if (type === 'widget' && owner) {
+      // สำหรับ widget ให้แยกตาม user: uploads/widget/{username}/image.jpg
+      // ทำความสะอาด owner เพื่อใช้เป็น path (ลบ special characters)
+      const cleanOwner = owner.replace(/[^a-zA-Z0-9_-]/g, '_');
+      key = `uploads/${type}/${cleanOwner}/${uniqueFileName}`;
+    } else {
+      // สำหรับ profile และ portfolio หรือ widget ที่ไม่มี owner
+      key = `uploads/${type}/${uniqueFileName}`;
+    }
 
     try {
       const command = new PutObjectCommand({
@@ -94,7 +107,7 @@ export class S3Service {
       await this.s3Client.send(command);
       this.logger.log(`File uploaded successfully: ${key} (private)`);
 
-      // Return relative path โดยไม่มี leading slash (เช่น uploads/widget/image.jpg)
+      // Return relative path โดยไม่มี leading slash (เช่น uploads/widget/username/image.jpg)
       // เพื่อให้บันทึกลง database ได้ง่าย และ getProxyUrl จะจัดการ leading slash ให้เอง
       return key;
     } catch (error) {

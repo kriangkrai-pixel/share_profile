@@ -231,8 +231,11 @@ export default function UserProfilePage() {
 
     const loadLayout = async () => {
       try {
-        console.log("🔄 Loading layout from:", API_ENDPOINTS.LAYOUT);
-        const response = await apiRequest(API_ENDPOINTS.LAYOUT, {
+        const layoutEndpoint = username
+          ? API_ENDPOINTS.LAYOUT_USERNAME(username)
+          : API_ENDPOINTS.LAYOUT;
+        console.log("🔄 Loading layout from:", layoutEndpoint);
+        const response = await apiRequest(layoutEndpoint, {
           method: "GET",
           credentials: "include",
           cache: "no-store",
@@ -406,7 +409,10 @@ export default function UserProfilePage() {
       
       const loadLayout = async () => {
         try {
-          const response = await apiRequest(API_ENDPOINTS.LAYOUT, {
+          const layoutEndpoint = username
+            ? API_ENDPOINTS.LAYOUT_USERNAME(username)
+            : API_ENDPOINTS.LAYOUT;
+          const response = await apiRequest(layoutEndpoint, {
             method: "GET",
             credentials: "include",
             cache: "no-store",
@@ -486,7 +492,7 @@ export default function UserProfilePage() {
 
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
-  }, [profile]);
+  }, [profile, username]);
 
   // ฟังก์ชันส่งข้อความติดต่อ
   const handleContactSubmit = async (e: React.FormEvent) => {
@@ -494,6 +500,11 @@ export default function UserProfilePage() {
     
     if (!contactForm.name || !contactForm.email || !contactForm.message) {
       alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+      return;
+    }
+
+    if (!username) {
+      alert("ไม่พบเจ้าของโปรไฟล์ กรุณาตรวจสอบ URL อีกครั้ง");
       return;
     }
 
@@ -506,6 +517,7 @@ export default function UserProfilePage() {
           name: contactForm.name,
           email: contactForm.email,
           message: contactForm.message,
+          username,
         }),
       });
 

@@ -9,6 +9,7 @@ import {
   useState,
   ReactNode,
 } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
 
 export type HeaderMenuLink = {
@@ -110,10 +111,29 @@ interface SiteSettingsContextValue {
 }
 
 const STORAGE_KEY = "site-settings";
+const RESERVED_PATH_SEGMENTS = new Set([
+  "admin",
+  "register",
+  "login",
+  "portfolio",
+  "contact",
+  "api",
+  "_next",
+]);
 
 const SiteSettingsContext = createContext<SiteSettingsContextValue | undefined>(undefined);
 
 export function SiteSettingsProvider({ children }: { children: ReactNode }) {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const queryOwner = searchParams?.get("username")?.trim() || null;
+  const pathSegments = pathname?.split("/").filter(Boolean) ?? [];
+  const pathOwner =
+    pathSegments.length === 1 && !RESERVED_PATH_SEGMENTS.has(pathSegments[0])
+      ? pathSegments[0]
+      : null;
+  const ownerParam = queryOwner || pathOwner;
+  const storageKey = ownerParam ? `${STORAGE_KEY}:${ownerParam}` : STORAGE_KEY;
   const [settings, setSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -121,7 +141,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
   const loadFromCache = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
-      const cached = localStorage.getItem(STORAGE_KEY);
+      const cached = localStorage.getItem(storageKey);
       if (cached) {
         const parsed = JSON.parse(cached);
         setSettings({
@@ -154,22 +174,48 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
-  }, []);
+  }, [storageKey]);
 
   const fetchSettings = useCallback(async () => {
     setIsLoading(true);
     setError(undefined);
     try {
-      const response = await apiRequest(API_ENDPOINTS.SETTINGS, {
-        method: "GET",
-        cache: "no-store",
-      });
+      let data: any = null;
 
-      if (!response.ok) {
-        throw new Error(`โหลดการตั้งค่าไม่สำเร็จ (${response.status})`);
+      if (ownerParam) {
+        const ownerResponse = await apiRequest(API_ENDPOINTS.SETTINGS_USERNAME(ownerParam), {
+          method: "GET",
+          cache: "no-store",
+        });
+        if (ownerResponse.ok) {
+          data = await ownerResponse.json();
+        } else if (ownerResponse.status !== 404) {
+          console.warn(`⚠️ Failed to load owner settings (${ownerResponse.status})`);
+        }
       }
 
-      const data = await response.json();
+      if (!data) {
+        const personalResponse = await apiRequest(API_ENDPOINTS.SETTINGS_ME, {
+          method: "GET",
+          cache: "no-store",
+        });
+
+        if (personalResponse.ok) {
+          data = await personalResponse.json();
+        } else {
+          if (personalResponse.status !== 401 && personalResponse.status !== 404) {
+            console.warn(`⚠️ Failed to load personal settings (${personalResponse.status})`);
+          }
+          const fallbackResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
+            method: "GET",
+            cache: "no-store",
+          });
+          if (!fallbackResponse.ok) {
+            throw new Error(`โหลดการตั้งค่าไม่สำเร็จ (${fallbackResponse.status})`);
+          }
+          data = await fallbackResponse.json();
+        }
+      }
       const safeSettings: SiteSettings = {
         ...DEFAULT_SITE_SETTINGS,
         ...data,
@@ -198,7 +244,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
       };
       setSettings(safeSettings);
       if (typeof window !== "undefined") {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(safeSettings));
+        localStorage.setItem(storageKey, JSON.stringify(safeSettings));
       }
     } catch (err: any) {
       if (isConnectionError(err)) {
@@ -210,7 +256,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [loadFromCache]);
+  }, [loadFromCache, ownerParam, storageKey]);
 
   useEffect(() => {
     loadFromCache();

@@ -167,7 +167,7 @@ export default function HeaderFooterPage() {
       });
       
       // โหลดข้อมูลอื่นๆ จาก Settings API
-      const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
+      const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS_ME, {
         method: "GET",
         cache: "no-store",
       });
@@ -180,6 +180,15 @@ export default function HeaderFooterPage() {
       let settingsData = null;
       if (settingsResponse.ok) {
         settingsData = await settingsResponse.json();
+      } else if (settingsResponse.status === 404 || settingsResponse.status === 401) {
+        console.warn("⚠️ Personal settings not found, falling back to global defaults");
+        const fallbackResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
+          method: "GET",
+          cache: "no-store",
+        });
+        if (fallbackResponse.ok) {
+          settingsData = await fallbackResponse.json();
+        }
       }
       
       if (!settingsData || settingsData.error) {
@@ -295,7 +304,7 @@ export default function HeaderFooterPage() {
         footerShowPhone: settings.footerShowPhone,
       };
 
-      const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
+      const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS_ME, {
         method: "PUT",
         body: JSON.stringify(settingsPayload),
       });

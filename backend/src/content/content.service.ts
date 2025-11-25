@@ -164,7 +164,8 @@ export class ContentService {
   async getContentByUsername(username: string) {
     const user = await this.prisma.user.findUnique({
       where: { username },
-      include: {
+      select: {
+        id: true,
         pageContent: {
           include: {
             skills: {
@@ -210,11 +211,34 @@ export class ContentService {
       },
     });
 
-    if (!user || !user.pageContent) {
+    if (!user) {
       throw new NotFoundException('ไม่พบข้อมูลผู้ใช้');
     }
 
-    return this.formatContent(user.pageContent);
+    let pageContent = user.pageContent;
+
+    if (!pageContent) {
+      pageContent = await this.prisma.pageContent.create({
+        data: {
+          userId: user.id,
+          name: '',
+          email: '',
+          phone: '',
+          location: '',
+          description: '',
+          bio: '',
+          achievement: '',
+        },
+        include: {
+          skills: true,
+          education: true,
+          experiences: true,
+          portfolios: true,
+        },
+      });
+    }
+
+    return this.formatContent(pageContent);
   }
 
   private formatContent(pageContent: any) {
