@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
@@ -36,20 +36,31 @@ interface Portfolio {
 export default function PortfolioDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const username = searchParams?.get("username") || "";
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  
+  // สร้างลิงก์กลับไปหน้า profile หรือหน้าแรก
+  const backLink = username ? `/${username}#portfolio` : "/#portfolio";
+  const contactLink = username ? `/${username}#contact` : "/#contact";
 
   useEffect(() => {
     loadPortfolio();
-  }, [params.id]);
+  }, [params.id, username]);
 
   /**
    * โหลดข้อมูลผลงานจาก API
    */
   const loadPortfolio = async () => {
     try {
-      const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+      // ใช้ CONTENT_USERNAME ถ้ามี username parameter, ถ้าไม่มีให้ใช้ PROFILE (backward compatibility)
+      const apiEndpoint = username 
+        ? API_ENDPOINTS.CONTENT_USERNAME(username)
+        : API_ENDPOINTS.PROFILE;
+      
+      const response = await apiRequest(apiEndpoint, {
         method: "GET",
         cache: "no-store",
       });
@@ -110,7 +121,7 @@ export default function PortfolioDetailPage() {
             ผลงานที่คุณค้นหาอาจถูกลบหรือไม่มีอยู่ในระบบ
           </p>
           <Link
-            href="/#portfolio"
+            href={backLink}
             className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all"
           >
             <span>←</span>
@@ -128,7 +139,7 @@ export default function PortfolioDetailPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <Link
-              href="/#portfolio"
+              href={backLink}
               className="text-blue-600 hover:text-blue-700 font-medium inline-flex items-center gap-2 transition-colors"
             >
               <span className="text-xl">←</span>
@@ -198,7 +209,7 @@ export default function PortfolioDetailPage() {
                 </a>
               )}
               <Link
-                href="/#contact"
+                href={contactLink}
                 className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg transition-all text-center inline-flex items-center justify-center gap-2"
               >
                 <span>📧</span>
@@ -239,7 +250,7 @@ export default function PortfolioDetailPage() {
                 ติดต่อเราเพื่อหารือเกี่ยวกับโปรเจคของคุณ
               </p>
               <Link
-                href="/#contact"
+                href={contactLink}
                 className="inline-flex items-center gap-2 bg-white text-blue-600 hover:bg-blue-50 font-bold py-3 px-8 rounded-xl shadow-lg transition-all"
               >
                 <span>📨</span>
@@ -252,7 +263,7 @@ export default function PortfolioDetailPage() {
         {/* Back Button (Mobile) */}
         <div className="mt-8 text-center md:hidden">
           <Link
-            href="/#portfolio"
+            href={backLink}
             className="inline-flex items-center gap-2 bg-white hover:bg-gray-50 text-gray-900 font-bold py-3 px-6 rounded-xl shadow-lg transition-all border-2 border-gray-200"
           >
             <span>←</span>

@@ -242,9 +242,6 @@ export class ContentService {
   }
 
   private formatContent(pageContent: any) {
-    const university = pageContent.education.find((e: any) => e.type === 'university');
-    const highschool = pageContent.education.find((e: any) => e.type === 'highschool');
-
     return {
       id: pageContent.id,
       name: pageContent.name,
@@ -257,20 +254,16 @@ export class ContentService {
       heroImage: this.convertToProxyUrl(pageContent.heroImage),
       contactImage: this.convertToProxyUrl(pageContent.contactImage),
       skills: pageContent.skills.map((s: any) => s.name),
-      education: {
-        university: {
-          field: university?.field || '',
-          university: university?.institution || '',
-          year: university?.year || '',
-          gpa: university?.gpa || '',
-          status: university?.status || 'studying',
-        },
-        highschool: {
-          field: highschool?.field || '',
-          school: highschool?.institution || '',
-          gpa: highschool?.gpa || '',
-        },
-      },
+      education: pageContent.education.map((edu: any) => ({
+        id: edu.id,
+        type: edu.type,
+        field: edu.field,
+        institution: edu.institution,
+        location: edu.location || undefined,
+        year: edu.year || undefined,
+        gpa: edu.gpa || undefined,
+        status: edu.status || 'studying',
+      })),
       experience: pageContent.experiences.map((exp: any) => ({
         id: exp.id,
         title: exp.title,

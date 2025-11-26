@@ -119,17 +119,17 @@ export default function Home() {
   const [loggedInUserName, setLoggedInUserName] = useState<string | null>(null);
   const [ownerUsername, setOwnerUsername] = useState<string | null>(null);
   
-  // State สำหรับ Theme Settings
-  const [theme, setTheme] = useState<ThemeSettings>({
-    primaryColor: "#000000ff",
-    secondaryColor: "#000000ff",
-    accentColor: "#10b981",
-    backgroundColor: "#ffffff",
-    textColor: "#1f2937",
-    headerBgColor: "#ffffff",
-    headerTextColor: "#1f2937",
-    footerBgColor: "#1f2937",
-    footerTextColor: "#ffffff",
+  // State สำหรับ Theme Settings - ใช้สีแบบ hardcode (ไม่ต้องดึงจาก API)
+  const [theme] = useState<ThemeSettings>({
+    primaryColor: "#6366f1",      // Indigo - สีน้ำเงินม่วงสวยงาม
+    secondaryColor: "#8b5cf6",   // Purple - สีม่วง
+    accentColor: "#10b981",      // Emerald - สีเขียวสดใส
+    backgroundColor: "#ffffff",  // White - พื้นหลังขาว
+    textColor: "#0f172a",         // Slate 900 - ข้อความเทาเข้ม
+    headerBgColor: "#ffffff",    // White - หัวข้อขาว
+    headerTextColor: "#0f172a",  // Slate 900 - ข้อความหัวข้อ
+    footerBgColor: "#1e293b",    // Slate 800 - เทาเข้ม
+    footerTextColor: "#ffffff",  // White - ข้อความฟุตเตอร์ขาว
   });
   
   // State สำหรับฟอร์มติดต่อ
@@ -199,106 +199,6 @@ export default function Home() {
           console.warn("⚠️ Backend may not be running or CORS issue. Using default layout.");
         }
         setLayout(null);
-      }
-    };
-
-    const loadTheme = async (owner?: string | null) => {
-      try {
-        if (owner) {
-          console.log("🎨 Loading theme for owner:", owner);
-          const response = await apiRequest(API_ENDPOINTS.THEME_USERNAME(owner), {
-            method: "GET",
-            cache: "no-store",
-            retryOn429: true,
-            maxRetries: 2,
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data && !data.error) {
-              setTheme({
-                primaryColor: data.primaryColor || "#3b82f6",
-                secondaryColor: data.secondaryColor || "#8b5cf6",
-                accentColor: data.accentColor || "#10b981",
-                backgroundColor: data.backgroundColor || "#ffffff",
-                textColor: data.textColor || "#1f2937",
-                headerBgColor: data.headerBgColor || "#ffffff",
-                headerTextColor: data.headerTextColor || "#1f2937",
-                footerBgColor: data.footerBgColor || "#1f2937",
-                footerTextColor: data.footerTextColor || "#ffffff",
-              });
-              return;
-            }
-          } else if (response.status === 429) {
-            // Rate limit - use default theme, will retry automatically
-            console.warn("⚠️ Rate limit exceeded while loading theme, using default");
-          }
-        } else {
-          const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
-          
-          if (token) {
-            console.log("🎨 Loading theme from:", API_ENDPOINTS.THEME_ME);
-            const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
-              method: "GET",
-              credentials: "include",
-              cache: "no-store",
-              retryOn429: true,
-              maxRetries: 2,
-            });
-            
-            if (response.ok) {
-              const data = await response.json();
-              if (data && !data.error) {
-                setTheme({
-                  primaryColor: data.primaryColor || "#3b82f6",
-                  secondaryColor: data.secondaryColor || "#8b5cf6",
-                  accentColor: data.accentColor || "#10b981",
-                  backgroundColor: data.backgroundColor || "#ffffff",
-                  textColor: data.textColor || "#1f2937",
-                  headerBgColor: data.headerBgColor || "#ffffff",
-                  headerTextColor: data.headerTextColor || "#1f2937",
-                  footerBgColor: data.footerBgColor || "#1f2937",
-                  footerTextColor: data.footerTextColor || "#ffffff",
-                });
-                return;
-              }
-            } else if (response.status === 429) {
-              // Rate limit - use default theme, will retry automatically
-              console.warn("⚠️ Rate limit exceeded while loading theme, using default");
-            }
-          }
-        }
-        
-        console.log("🎨 Using default theme");
-        setTheme({
-          primaryColor: "#3b82f6",
-          secondaryColor: "#8b5cf6",
-          accentColor: "#10b981",
-          backgroundColor: "#ffffff",
-          textColor: "#1f2937",
-          headerBgColor: "#ffffff",
-          headerTextColor: "#1f2937",
-          footerBgColor: "#1f2937",
-          footerTextColor: "#ffffff",
-        });
-      } catch (error) {
-        console.error("❌ Error loading theme:", error);
-        // Check if it's a network error
-        if (error instanceof TypeError && error.message === "Failed to fetch") {
-          console.warn("⚠️ Backend may not be running or CORS issue. Using default theme.");
-        }
-        // Keep default theme values on error
-        setTheme({
-          primaryColor: "#3b82f6",
-          secondaryColor: "#8b5cf6",
-          accentColor: "#10b981",
-          backgroundColor: "#ffffff",
-          textColor: "#1f2937",
-          headerBgColor: "#ffffff",
-          headerTextColor: "#1f2937",
-          footerBgColor: "#1f2937",
-          footerTextColor: "#ffffff",
-        });
       }
     };
 
@@ -375,9 +275,9 @@ export default function Home() {
     };
 
     // โหลดข้อมูลทั้งหมดพร้อมกัน (Parallel Loading)
+    // Note: Theme ใช้สีแบบ hardcode ไม่ต้องดึงจาก API
     Promise.all([
       loadLayout(),
-      loadTheme(targetOwner),
       refreshProfile(),
       loadLoggedInUser(targetOwner),
       loadOwnerProfile(targetOwner),
@@ -498,93 +398,6 @@ export default function Home() {
           }
         }
       };
-      
-      // โหลด Theme ใหม่
-      const loadTheme = async () => {
-        try {
-          if (ownerParam) {
-            const response = await apiRequest(API_ENDPOINTS.THEME_USERNAME(ownerParam), {
-              method: "GET",
-              cache: "no-store",
-              retryOn429: true,
-              maxRetries: 1,
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-              if (data && !data.error) {
-                setTheme({
-                  primaryColor: data.primaryColor || "#3b82f6",
-                  secondaryColor: data.secondaryColor || "#8b5cf6",
-                  accentColor: data.accentColor || "#10b981",
-                  backgroundColor: data.backgroundColor || "#ffffff",
-                  textColor: data.textColor || "#1f2937",
-                  headerBgColor: data.headerBgColor || "#ffffff",
-                  headerTextColor: data.headerTextColor || "#1f2937",
-                  footerBgColor: data.footerBgColor || "#1f2937",
-                  footerTextColor: data.footerTextColor || "#ffffff",
-                });
-                return;
-              }
-            } else if (response.status === 429) {
-              console.warn("⚠️ Rate limit exceeded during theme refresh");
-              return;
-            }
-          } else {
-            // ตรวจสอบว่ามี token หรือไม่
-            const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
-            
-            if (token) {
-              // ถ้ามี token ให้โหลด theme preferences ของ user
-              const response = await apiRequest(API_ENDPOINTS.THEME_ME, {
-                method: "GET",
-                credentials: "include",
-                cache: "no-store",
-                retryOn429: true,
-                maxRetries: 1,
-              });
-              
-              if (response.ok) {
-                const data = await response.json();
-                if (data && !data.error) {
-                  setTheme({
-                    primaryColor: data.primaryColor || "#3b82f6",
-                    secondaryColor: data.secondaryColor || "#8b5cf6",
-                    accentColor: data.accentColor || "#10b981",
-                    backgroundColor: data.backgroundColor || "#ffffff",
-                    textColor: data.textColor || "#1f2937",
-                    headerBgColor: data.headerBgColor || "#ffffff",
-                    headerTextColor: data.headerTextColor || "#1f2937",
-                    footerBgColor: data.footerBgColor || "#1f2937",
-                    footerTextColor: data.footerTextColor || "#ffffff",
-                  });
-                  return;
-                }
-              } else if (response.status === 429) {
-                console.warn("⚠️ Rate limit exceeded during theme refresh");
-                return;
-              }
-            }
-          }
-          
-          setTheme({
-            primaryColor: "#3b82f6",
-            secondaryColor: "#8b5cf6",
-            accentColor: "#10b981",
-            backgroundColor: "#ffffff",
-            textColor: "#1f2937",
-            headerBgColor: "#ffffff",
-            headerTextColor: "#1f2937",
-            footerBgColor: "#1f2937",
-            footerTextColor: "#ffffff",
-          });
-        } catch (error) {
-          console.error("❌ Error loading theme:", error);
-          if (error instanceof TypeError && error.message === "Failed to fetch") {
-            console.warn("⚠️ Backend may not be running or CORS issue.");
-          }
-        }
-      };
 
       const loadOwnerProfile = async () => {
         if (!ownerParam) {
@@ -629,10 +442,10 @@ export default function Home() {
       };
       
       // โหลดพร้อมกัน
+      // Note: Theme ใช้สีแบบ hardcode ไม่ต้องดึงจาก API
       try {
         await Promise.all([
           loadLayout(),
-          loadTheme(),
           refreshProfile(),
           loadOwnerProfile(),
           refreshOwnerState(),

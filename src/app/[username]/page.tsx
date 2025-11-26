@@ -63,6 +63,17 @@ const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   footerTextColor: "#ffffff",
 };
 
+interface Education {
+  id: number;
+  type: string;
+  field: string;
+  institution: string;
+  location?: string;
+  year?: string;
+  gpa?: string;
+  status?: string;
+}
+
 interface ProfileData {
   name: string;
   email: string;
@@ -74,20 +85,7 @@ interface ProfileData {
   heroImage?: string;
   contactImage?: string;
   skills: string[];
-  education: {
-    university: {
-      field: string;
-      university: string;
-      year: string;
-      gpa?: string;
-      status?: string;
-    };
-    highschool: {
-      field: string;
-      school: string;
-      gpa: string;
-    };
-  };
+  education: Education[];
   experience: Array<{
     id: number;
     title: string;
@@ -135,6 +133,46 @@ export default function UserProfilePage() {
   // Transform API response to ProfileData format
   // ใช้ useCallback เพื่อไม่ต้องสร้าง function ใหม่ทุกครั้ง
   const transformUserContent = useCallback((data: any): ProfileData => {
+    // รองรับทั้งโครงสร้างใหม่ (array) และเก่า (object) เพื่อ backward compatibility
+    let education: Education[] = [];
+    
+    if (Array.isArray(data.education)) {
+      // โครงสร้างใหม่ - array
+      education = data.education.map((edu: any) => ({
+        id: edu.id,
+        type: edu.type || 'university',
+        field: edu.field || '',
+        institution: edu.institution || '',
+        location: edu.location,
+        year: edu.year,
+        gpa: edu.gpa,
+        status: edu.status || 'studying',
+      }));
+    } else if (data.education && typeof data.education === 'object') {
+      // โครงสร้างเก่า - object (backward compatibility)
+      if (data.education.university) {
+        education.push({
+          id: 0,
+          type: 'university',
+          field: data.education.university.field || '',
+          institution: data.education.university.university || data.education.university.institution || '',
+          year: data.education.university.year,
+          gpa: data.education.university.gpa,
+          status: data.education.university.status || 'studying',
+        });
+      }
+      if (data.education.highschool) {
+        education.push({
+          id: 1,
+          type: 'highschool',
+          field: data.education.highschool.field || '',
+          institution: data.education.highschool.school || data.education.highschool.institution || '',
+          gpa: data.education.highschool.gpa,
+          status: 'graduated',
+        });
+      }
+    }
+    
     return {
       name: data.name || "",
       email: data.email || "",
@@ -146,20 +184,7 @@ export default function UserProfilePage() {
       heroImage: data.heroImage,
       contactImage: data.contactImage,
       skills: data.skills || [],
-      education: {
-        university: {
-          field: data.education?.university?.field || "",
-          university: data.education?.university?.university || "",
-          year: data.education?.university?.year || "",
-          gpa: data.education?.university?.gpa,
-          status: data.education?.university?.status || "studying",
-        },
-        highschool: {
-          field: data.education?.highschool?.field || "",
-          school: data.education?.highschool?.school || "",
-          gpa: data.education?.highschool?.gpa || "",
-        },
-      },
+      education: education,
       experience: data.experience || [],
       portfolio: data.portfolio || [],
     };
@@ -761,64 +786,92 @@ export default function UserProfilePage() {
               </h3>
               
               <div className="space-y-6">
-                {(() => {
-                  const universityStatus = profile.education.university.status || "studying";
-                  const isGraduated = universityStatus === "graduated";
-                  const universityGpa = profile.education.university.gpa;
-                  
-                  return (
-                    <div className="bg-white p-6 rounded-xl shadow-md border-2 hover:shadow-xl transition-all duration-300 hover:-translate-y-1" style={{ borderColor: isGraduated ? theme.accentColor : theme.primaryColor }}>
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <h4 className="text-lg font-bold mb-1" style={{ color: theme.textColor }}>{profile.education.university.field}</h4>
-                          <p className="font-medium text-primary">{profile.education.university.university}</p>
+                {profile.education.length > 0 ? (
+                  profile.education.map((edu, index) => {
+                    const isGraduated = edu.status === "graduated";
+                    const getTypeIcon = (type: string) => {
+                      switch (type) {
+                        case 'university': return '🎓';
+                        case 'master': return '🎓';
+                        case 'doctorate': return '🎓';
+                        case 'highschool': return '🏫';
+                        case 'vocational': return '🏛️';
+                        default: return '📚';
+                      }
+                    };
+                    const getTypeLabel = (type: string) => {
+                      switch (type) {
+                        case 'university': return 'มหาวิทยาลัย';
+                        case 'master': return 'ปริญญาโท';
+                        case 'doctorate': return 'ปริญญาเอก';
+                        case 'highschool': return 'มัธยมศึกษา';
+                        case 'vocational': return 'อาชีวศึกษา';
+                        default: return type;
+                      }
+                    };
+                    
+                    return (
+                      <div 
+                        key={edu.id || index}
+                        className="bg-white p-6 rounded-xl shadow-md border-2 hover:shadow-xl transition-all duration-300 hover:-translate-y-1" 
+                        style={{ borderColor: isGraduated ? theme.accentColor : theme.primaryColor }}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xl">{getTypeIcon(edu.type)}</span>
+                              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ 
+                                backgroundColor: `${theme.primaryColor}15`,
+                                color: theme.primaryColor 
+                              }}>
+                                {getTypeLabel(edu.type)}
+                              </span>
+                            </div>
+                            <h4 className="text-lg font-bold mb-1" style={{ color: theme.textColor }}>{edu.field}</h4>
+                            <p className="font-medium text-primary">{edu.institution}</p>
+                            {edu.location && (
+                              <p className="text-sm mt-1 flex items-center gap-1 text-gray-600">
+                                <span>📍</span>
+                                {edu.location}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-2 items-end">
+                            {isGraduated && edu.gpa ? (
+                              <span className="text-white text-sm font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap bg-accent">
+                                GPA {edu.gpa}
+                              </span>
+                            ) : edu.year ? (
+                              <span className="text-white text-sm font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap" style={{ 
+                                background: `linear-gradient(to right, ${theme.primaryColor}, ${theme.secondaryColor})`
+                              }}>
+                                {edu.year}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                        {isGraduated && universityGpa ? (
-                          <span className="text-white text-sm font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap ml-2 bg-accent">
-                            GPA {universityGpa}
-                          </span>
-                        ) : (
-                          <span className="text-white text-sm font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap ml-2" style={{ 
-                            background: `linear-gradient(to right, ${theme.primaryColor}, ${theme.secondaryColor})`
-                          }}>
-                            {profile.education.university.year}
-                          </span>
-                        )}
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          {isGraduated ? (
+                            <span className="inline-flex items-center gap-2 text-sm font-semibold text-accent">
+                              <span>✓</span>
+                              จบการศึกษาแล้ว
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                              <span className="w-2 h-2 rounded-full animate-pulse bg-primary"></span>
+                              กำลังศึกษาอยู่
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        {isGraduated ? (
-                          <span className="inline-flex items-center gap-2 text-sm font-semibold text-accent">
-                            <span>✓</span>
-                            จบการศึกษาแล้ว
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
-                            <span className="w-2 h-2 rounded-full animate-pulse bg-primary"></span>
-                            กำลังศึกษาอยู่
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <div className="bg-white p-6 rounded-xl shadow-md border-2 hover:shadow-xl transition-all duration-300 hover:-translate-y-1" style={{ borderColor: theme.accentColor }}>
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h4 className="text-lg font-bold mb-1" style={{ color: theme.textColor }}>{profile.education.highschool.field}</h4>
-                      <p className="font-medium text-accent">{profile.education.highschool.school}</p>
-                    </div>
-                    <span className="text-white text-sm font-bold px-4 py-2 rounded-full shadow-md bg-accent">
-                      GPA {profile.education.highschool.gpa}
-                    </span>
+                    );
+                  })
+                ) : (
+                  <div className="bg-white p-8 rounded-xl shadow-md border-2 border-gray-200 text-center">
+                    <span className="text-4xl mb-3 block">🎓</span>
+                    <p className="text-gray-500 font-medium">ยังไม่มีข้อมูลการศึกษา</p>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <span className="inline-flex items-center gap-2 text-sm font-semibold text-accent">
-                      <span>✓</span>
-                      จบการศึกษา
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -954,7 +1007,7 @@ export default function UserProfilePage() {
                       
                       <div className="flex items-center gap-3">
                         <Link
-                          href={`/portfolio/${item.id}`}
+                          href={`/portfolio/${item.id}?username=${username}`}
                           className="inline-flex items-center gap-2 font-semibold text-sm group/link text-secondary"
                         >
                           <span>รายละเอียด</span>
@@ -1438,6 +1491,99 @@ export default function UserProfilePage() {
             <p className="mb-4" style={{ color: theme.textColor }}>{profile.bio}</p>
             <p style={{ color: theme.textColor }}>{profile.achievement}</p>
           </div>
+        </div>
+      </section>
+
+      <section id="portfolio" className="px-6 md:px-20 py-12" style={{ backgroundColor: theme.backgroundColor }}>
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl md:text-3xl font-bold flex items-center gap-3 text-primary">
+              <span className="text-3xl">💼</span>
+              ผลงาน
+            </h2>
+            <span className="text-sm font-medium px-4 py-2 rounded-full" style={{ 
+              backgroundColor: `${theme.primaryColor}15`,
+              color: theme.primaryColor 
+            }}>
+              {profile.portfolio.length} โปรเจค
+            </span>
+          </div>
+          
+          {profile.portfolio.length === 0 ? (
+            <div className="text-center py-16">
+              <p className="text-4xl mb-4">📁</p>
+              <p className="text-gray-500">ยังไม่มีผลงาน</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {profile.portfolio.map((item, index) => (
+                <div 
+                  key={item.id} 
+                  className="group relative rounded-xl border-2 bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 overflow-hidden"
+                  style={{ 
+                    borderColor: '#e5e7eb',
+                    animationDelay: `${index * 100}ms` 
+                  }}
+                >
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ background: `linear-gradient(to bottom right, ${theme.primaryColor}05, ${theme.secondaryColor}05)` }}></div>
+                  
+                  {item.image && (
+                    <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
+                      <img 
+                        src={item.image} 
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                      />
+                      <div className="absolute top-3 left-3 w-10 h-10 gradient-primary rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                        {index + 1}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="relative z-10 p-6">
+                    {!item.image && (
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="w-12 h-12 gradient-primary rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                          {index + 1}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <h3 className="font-bold mb-3 text-lg group-hover:text-primary transition-colors" style={{ color: theme.textColor }}>
+                      {item.title}
+                    </h3>
+                    <p className="text-sm leading-relaxed mb-4 line-clamp-3" style={{ color: theme.textColor }}>
+                      {item.description}
+                    </p>
+                    
+                    <div className="flex items-center gap-3">
+                      <Link
+                        href={`/portfolio/${item.id}?username=${username}`}
+                        className="inline-flex items-center gap-2 font-semibold text-sm group/link text-secondary"
+                      >
+                        <span>รายละเอียด</span>
+                        <span className="transform group-hover/link:translate-x-1 transition-transform">→</span>
+                      </Link>
+                      {item.link && (
+                        <>
+                          <span className="text-gray-300">|</span>
+                          <a 
+                            href={item.link} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="inline-flex items-center gap-2 font-semibold text-sm group/link text-primary"
+                          >
+                            <span>ดูโปรเจค</span>
+                            <span className="transform group-hover/link:translate-x-1 transition-transform">↗</span>
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

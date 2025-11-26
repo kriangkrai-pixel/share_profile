@@ -13,6 +13,7 @@ interface Education {
   type: string;
   field: string;
   institution: string;
+  location?: string;
   year?: string;
   gpa?: string;
   status?: string;
@@ -37,20 +38,18 @@ export default function EducationExperiencePage() {
   const isSavingRef = useRef(false); // ใช้ ref เพื่อป้องกัน useEffect override ค่าขณะกำลังบันทึก
   const isInitialLoadRef = useRef(true); // ใช้ ref เพื่อตรวจสอบว่าเป็นครั้งแรกที่โหลดหรือไม่
 
-  // Education form
-  const [educationData, setEducationData] = useState({
-    university: {
-      field: profile.education.university.field,
-      university: profile.education.university.university,
-      year: profile.education.university.year,
-      gpa: (profile.education.university as any).gpa || "", // เพิ่ม GPA สำหรับมหาวิทยาลัย
-      status: (profile.education.university as any).status || "studying", // กำลังศึกษา หรือ จบการศึกษาแล้ว
-    },
-    highschool: {
-      field: profile.education.highschool.field,
-      school: profile.education.highschool.school,
-      gpa: profile.education.highschool.gpa,
-    },
+  // Education state - เปลี่ยนเป็น array-based
+  const [educations, setEducations] = useState<Education[]>([]);
+  const [editingEdu, setEditingEdu] = useState<Education | null>(null);
+  const [showAddEdu, setShowAddEdu] = useState(false);
+  const [newEdu, setNewEdu] = useState({
+    type: "university",
+    field: "",
+    institution: "",
+    location: "",
+    year: "",
+    gpa: "",
+    status: "studying",
   });
 
   // Experience state
@@ -73,34 +72,43 @@ export default function EducationExperiencePage() {
       setAuthenticated(true);
       const currentUsername = getUsernameFromToken();
       setUsername(currentUsername);
+      loadEducations();
       loadExperiences();
     }
   }, [router]);
 
   useEffect(() => {
-    // อัปเดตข้อมูลเฉพาะเมื่อ:
-    // 1. เป็นครั้งแรกที่โหลด (initial load)
-    // 2. ไม่ใช่ตอนกำลังบันทึก (isSavingRef.current === false)
-    // 3. profile มีข้อมูลจริง (ไม่ใช่ empty object)
-    if ((isInitialLoadRef.current || !isSavingRef.current) && profile.education) {
-      setEducationData({
-        university: {
-          field: profile.education.university.field,
-          university: profile.education.university.university,
-          year: profile.education.university.year,
-          gpa: (profile.education.university as any).gpa || "",
-          status: (profile.education.university as any).status || "studying",
-        },
-        highschool: {
-          field: profile.education.highschool.field,
-          school: profile.education.highschool.school,
-          gpa: profile.education.highschool.gpa,
-        },
-      });
+    // อัปเดตข้อมูลประสบการณ์จาก profile context
+    if (profile.experience) {
       setExperiences(profile.experience || []);
-      isInitialLoadRef.current = false;
     }
-  }, [profile]);
+    isInitialLoadRef.current = false;
+  }, [profile.experience]);
+
+  const loadEducations = async () => {
+    try {
+      const response = await apiRequest(API_ENDPOINTS.EDUCATION, {
+        method: "GET",
+        cache: "no-store",
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.warn(`⚠️ Failed to load educations: ${response.status} ${response.statusText}`, errorText);
+        setEducations([]);
+        return;
+      }
+      
+      const data = await response.json();
+      setEducations(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error loading educations:", error);
+      if (isConnectionError(error)) {
+        console.warn("⚠️ Backend may not be running.");
+      }
+      setEducations([]);
+    }
+  };
 
   const loadExperiences = async () => {
     try {
@@ -127,98 +135,104 @@ export default function EducationExperiencePage() {
     }
   };
 
-  const handleSaveEducation = async () => {
-    setSaving(true);
-    isSavingRef.current = true; // ตั้งค่า flag เพื่อป้องกัน useEffect override ค่า
+  const handleAddEducation = async () => {
+    if (!newEdu.type || !newEdu.field || !newEdu.institution) {
+      alert("กรุณากรอกประเภท สาขา และสถาบันให้ครบถ้วน");
+      return;
+    }
+
     try {
-      // ตรวจสอบข้อมูลก่อนส่ง
-      console.log("📤 Sending education data:", educationData);
-      
-      // ส่งข้อมูลการศึกษาไปยัง API โดยตรง
       const response = await apiRequest(API_ENDPOINTS.EDUCATION, {
+        method: "POST",
+        body: JSON.stringify(newEdu),
+      });
+
+      if (response.ok) {
+        await loadEducations();
+        setNewEdu({
+          type: "university",
+          field: "",
+          institution: "",
+          location: "",
+          year: "",
+          gpa: "",
+          status: "studying",
+        });
+        setShowAddEdu(false);
+        alert("✅ เพิ่มการศึกษาสำเร็จ!");
+      } else {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Failed to add education");
+      }
+    } catch (error: any) {
+      console.error("Error adding education:", error);
+      alert(`❌ เกิดข้อผิดพลาดในการเพิ่ม: ${error.message || error}`);
+    }
+  };
+
+  const handleUpdateEducation = async () => {
+    if (!editingEdu) return;
+    
+    if (!editingEdu.type || !editingEdu.field || !editingEdu.institution) {
+      alert("กรุณากรอกประเภท สาขา และสถาบันให้ครบถ้วน");
+      return;
+    }
+
+    try {
+      const response = await apiRequest(`${API_ENDPOINTS.EDUCATION}/update`, {
         method: "PUT",
-        body: JSON.stringify({ education: educationData }),
+        body: JSON.stringify({
+          id: editingEdu.id,
+          education: {
+            type: editingEdu.type,
+            field: editingEdu.field,
+            institution: editingEdu.institution,
+            location: editingEdu.location || null,
+            year: editingEdu.year || null,
+            gpa: editingEdu.gpa || null,
+            status: editingEdu.status || "studying",
+          },
+        }),
+      });
+
+      if (response.ok) {
+        await loadEducations();
+        setEditingEdu(null);
+        alert("✅ อัปเดตการศึกษาสำเร็จ!");
+      } else {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Failed to update education");
+      }
+    } catch (error: any) {
+      console.error("Error updating education:", error);
+      alert(`❌ เกิดข้อผิดพลาดในการอัปเดต: ${error.message || error}`);
+    }
+  };
+
+  const handleDeleteEducation = async (id: number) => {
+    if (!confirm("คุณต้องการลบการศึกษานี้หรือไม่?")) return;
+
+    try {
+      const response = await apiRequest(`${API_ENDPOINTS.EDUCATION}?id=${id}`, {
+        method: "DELETE",
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
-        console.error("❌ API Error:", errorData);
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete");
       }
 
       const result = await response.json();
-      console.log("✅ Education saved:", result);
-
-      // บันทึกประวัติการแก้ไข
-      try {
-        await apiRequest(API_ENDPOINTS.EDIT_HISTORY, {
-          method: "POST",
-          body: JSON.stringify({
-            page: "Education",
-            action: "update",
-            newValue: "Updated education information",
-          }),
-        });
-      } catch (historyError) {
-        console.warn("⚠️ Failed to save edit history:", historyError);
+      
+      if (result.success) {
+        await loadEducations();
+        alert("✅ ลบการศึกษาสำเร็จ!");
+      } else {
+        throw new Error(result.error || "Unknown error");
       }
-
-      // Fetch ข้อมูลใหม่โดยตรงเพื่อให้แน่ใจว่าข้อมูลอัปเดต (ไม่ใช้ refreshProfile เพราะจะ trigger useEffect)
-      try {
-        const refreshResponse = await apiRequest(API_ENDPOINTS.PROFILE, {
-          method: "GET",
-          cache: "no-store",
-        });
-        if (refreshResponse.ok) {
-          const updatedProfile = await refreshResponse.json();
-          if (!updatedProfile.error) {
-            // อัปเดต educationData จากข้อมูลใหม่ที่ fetch มา
-            const newEducationData = {
-              university: {
-                field: updatedProfile.education?.university?.field || "",
-                university: updatedProfile.education?.university?.university || "",
-                year: updatedProfile.education?.university?.year || "",
-                gpa: updatedProfile.education?.university?.gpa || "",
-                status: updatedProfile.education?.university?.status || "studying",
-              },
-              highschool: {
-                field: updatedProfile.education?.highschool?.field || "",
-                school: updatedProfile.education?.highschool?.school || "",
-                gpa: updatedProfile.education?.highschool?.gpa || "",
-              },
-            };
-            
-            setEducationData(newEducationData);
-            console.log("✅ Education data updated from server:", newEducationData);
-            
-            // รอให้ state อัปเดตก่อนค่อย refresh profile
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-        }
-      } catch (refreshError) {
-        console.warn("⚠️ Failed to refresh profile data:", refreshError);
-      }
-      
-      // Refresh profile เพื่อให้หน้าอื่นอัปเดต (หลังจากอัปเดต educationData แล้ว)
-      console.log("🔄 Refreshing profile...");
-      await refreshProfile();
-      
-      // รอให้ profile state อัปเดตก่อนค่อย set flag เป็น false
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Dispatch event เพื่อให้หน้าอื่นรู้ว่ามีการอัปเดต
-      window.dispatchEvent(new Event("profileUpdated"));
-      
-      alert("✅ บันทึกข้อมูลการศึกษาสำเร็จ!");
     } catch (error: any) {
-      console.error("❌ Error saving education:", error);
-      alert(`❌ เกิดข้อผิดพลาดในการบันทึก: ${error.message || error}`);
-    } finally {
-      // รอให้ทุกอย่างเสร็จก่อนค่อย set flag เป็น false
-      setTimeout(() => {
-        setSaving(false);
-        isSavingRef.current = false;
-      }, 300);
+      console.error("Error deleting education:", error);
+      alert(`❌ เกิดข้อผิดพลาดในการลบ: ${error.message || error}`);
     }
   };
 
@@ -345,177 +359,89 @@ export default function EducationExperiencePage() {
                 ประวัติการศึกษา
               </h2>
               <button
-                onClick={handleSaveEducation}
-                disabled={saving}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all disabled:opacity-50"
+                onClick={() => setShowAddEdu(true)}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
               >
-                {saving ? "กำลังบันทึก..." : "💾 บันทึก"}
+                ➕ เพิ่มการศึกษา
               </button>
             </div>
 
-            {/* มหาวิทยาลัย */}
-            <div className="bg-blue-50 rounded-xl p-6 mb-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-900">🎓 มหาวิทยาลัย</h3>
-                {educationData.university.status === "graduated" && (
-                  <span className="bg-green-100 text-green-800 text-xs font-semibold px-3 py-1 rounded-full">
-                    ✅ จบการศึกษาแล้ว
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    สถานะการศึกษา
-                  </label>
-                  <select
-                    value={educationData.university.status}
-                    onChange={(e) =>
-                      setEducationData({
-                        ...educationData,
-                        university: { ...educationData.university, status: e.target.value },
-                      })
-                    }
-                    className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none bg-white"
+            {/* Education List */}
+            <div className="space-y-4">
+              {educations.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-xl">
+                  <span className="text-5xl mb-3 block">🎓</span>
+                  <p className="text-gray-500 font-medium">ยังไม่มีข้อมูลการศึกษา</p>
+                  <button
+                    onClick={() => setShowAddEdu(true)}
+                    className="mt-4 text-blue-600 hover:text-blue-700 font-semibold"
                   >
-                    <option value="studying">กำลังศึกษา</option>
-                    <option value="graduated">จบการศึกษาแล้ว</option>
-                  </select>
+                    + เพิ่มการศึกษาครั้งแรก
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    สาขาวิชา
-                  </label>
-                  <input
-                    type="text"
-                    value={educationData.university.field}
-                    onChange={(e) =>
-                      setEducationData({
-                        ...educationData,
-                        university: { ...educationData.university, field: e.target.value },
-                      })
-                    }
-                    className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none"
-                    placeholder="เช่น สาขาวิชาคอมพิวเตอร์"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    มหาวิทยาลัย
-                  </label>
-                  <input
-                    type="text"
-                    value={educationData.university.university}
-                    onChange={(e) =>
-                      setEducationData({
-                        ...educationData,
-                        university: { ...educationData.university, university: e.target.value },
-                      })
-                    }
-                    className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none"
-                    placeholder="เช่น มหาวิทยาลัยราชภัฏภูเก็ต"
-                  />
-                </div>
-                {educationData.university.status === "graduated" ? (
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      เกรดเฉลี่ย (GPA)
-                    </label>
-                    <input
-                      type="text"
-                      value={educationData.university.gpa}
-                      onChange={(e) =>
-                        setEducationData({
-                          ...educationData,
-                          university: { ...educationData.university, gpa: e.target.value },
-                        })
-                      }
-                      className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none"
-                      placeholder="เช่น 3.50"
-                    />
+              ) : (
+                educations.map((edu) => (
+                  <div
+                    key={edu.id}
+                    className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200 hover:shadow-lg transition-all"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-bold text-gray-900">{edu.institution}</h3>
+                          <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full">
+                            {edu.type === "university" ? "🎓 มหาวิทยาลัย" : 
+                             edu.type === "highschool" ? "🏫 มัธยมศึกษา" : 
+                             edu.type === "vocational" ? "🏛️ อาชีวศึกษา" :
+                             edu.type === "master" ? "🎓 ปริญญาโท" :
+                             edu.type === "doctorate" ? "🎓 ปริญญาเอก" :
+                             "📚 " + edu.type}
+                          </span>
+                          {edu.status === "graduated" && (
+                            <span className="bg-green-100 text-green-800 text-xs font-semibold px-3 py-1 rounded-full">
+                              ✅ จบการศึกษาแล้ว
+                            </span>
+                          )}
+                          {edu.status === "studying" && (
+                            <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-3 py-1 rounded-full">
+                              📖 กำลังศึกษา
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-blue-600 font-semibold">{edu.field}</p>
+                        {edu.location && (
+                          <p className="text-gray-600 text-sm flex items-center gap-2 mt-1">
+                            <span>📍</span>
+                            {edu.location}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-500">
+                          {edu.year && (
+                            <span>📅 {edu.year}</span>
+                          )}
+                          {edu.gpa && (
+                            <span>📊 GPA: {edu.gpa}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          onClick={() => setEditingEdu(edu)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold"
+                        >
+                          ✏️ แก้ไข
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEducation(edu.id)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold"
+                        >
+                          🗑️ ลบ
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      ปีการศึกษา
-                    </label>
-                    <input
-                      type="text"
-                      value={educationData.university.year}
-                      onChange={(e) =>
-                        setEducationData({
-                          ...educationData,
-                          university: { ...educationData.university, year: e.target.value },
-                        })
-                      }
-                      className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none"
-                      placeholder="เช่น ปี 4"
-                    />
-                  </div>
-                )}
-              </div>
-              {educationData.university.status === "graduated" && (
-                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm text-green-800">
-                    💡 <strong>หมายเหตุ:</strong> คุณสามารถแก้ไขข้อมูลการศึกษาได้แม้ว่าจะจบการศึกษาแล้ว
-                  </p>
-                </div>
+                ))
               )}
-            </div>
-
-            {/* มัธยม */}
-            <div className="bg-purple-50 rounded-xl p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">🏫 มัธยมศึกษา</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    แผนการเรียน
-                  </label>
-                  <input
-                    type="text"
-                    value={educationData.highschool.field}
-                    onChange={(e) =>
-                      setEducationData({
-                        ...educationData,
-                        highschool: { ...educationData.highschool, field: e.target.value },
-                      })
-                    }
-                    className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-purple-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    โรงเรียน
-                  </label>
-                  <input
-                    type="text"
-                    value={educationData.highschool.school}
-                    onChange={(e) =>
-                      setEducationData({
-                        ...educationData,
-                        highschool: { ...educationData.highschool, school: e.target.value },
-                      })
-                    }
-                    className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-purple-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    เกรดเฉลี่ย (GPA)
-                  </label>
-                  <input
-                    type="text"
-                    value={educationData.highschool.gpa}
-                    onChange={(e) =>
-                      setEducationData({
-                        ...educationData,
-                        highschool: { ...educationData.highschool, gpa: e.target.value },
-                      })
-                    }
-                    className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 focus:border-purple-500 focus:outline-none"
-                  />
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -592,6 +518,266 @@ export default function EducationExperiencePage() {
           </div>
         </div>
       </div>
+
+      {/* Add Education Modal */}
+      {showAddEdu && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">➕ เพิ่มการศึกษาใหม่</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  ประเภทการศึกษา *
+                </label>
+                <select
+                  value={newEdu.type}
+                  onChange={(e) => setNewEdu({ ...newEdu, type: e.target.value })}
+                  className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="university">🎓 มหาวิทยาลัย</option>
+                  <option value="master">🎓 ปริญญาโท</option>
+                  <option value="doctorate">🎓 ปริญญาเอก</option>
+                  <option value="highschool">🏫 มัธยมศึกษา</option>
+                  <option value="vocational">🏛️ อาชีวศึกษา</option>
+                  <option value="other">📚 อื่นๆ</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  สาขาวิชา *
+                </label>
+                <input
+                  type="text"
+                  value={newEdu.field}
+                  onChange={(e) => setNewEdu({ ...newEdu, field: e.target.value })}
+                  className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  placeholder="เช่น สาขาวิชาคอมพิวเตอร์"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  สถาบันการศึกษา *
+                </label>
+                <input
+                  type="text"
+                  value={newEdu.institution}
+                  onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })}
+                  className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  placeholder="เช่น มหาวิทยาลัยราชภัฏภูเก็ต"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    สถานที่ (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    value={newEdu.location}
+                    onChange={(e) => setNewEdu({ ...newEdu, location: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                    placeholder="เช่น กรุงเทพฯ"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    สถานะการศึกษา
+                  </label>
+                  <select
+                    value={newEdu.status}
+                    onChange={(e) => setNewEdu({ ...newEdu, status: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="studying">📖 กำลังศึกษา</option>
+                    <option value="graduated">✅ จบการศึกษาแล้ว</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    ปีการศึกษา (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    value={newEdu.year}
+                    onChange={(e) => setNewEdu({ ...newEdu, year: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                    placeholder="เช่น ปี 4 หรือ 2567"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    เกรดเฉลี่ย GPA (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    value={newEdu.gpa}
+                    onChange={(e) => setNewEdu({ ...newEdu, gpa: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                    placeholder="เช่น 3.50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleAddEducation}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-6 rounded-xl shadow-lg"
+              >
+                ✅ เพิ่มการศึกษา
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddEdu(false);
+                  setNewEdu({
+                    type: "university",
+                    field: "",
+                    institution: "",
+                    location: "",
+                    year: "",
+                    gpa: "",
+                    status: "studying",
+                  });
+                }}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-6 rounded-xl"
+              >
+                ❌ ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Education Modal */}
+      {editingEdu && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">✏️ แก้ไขการศึกษา</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  ประเภทการศึกษา *
+                </label>
+                <select
+                  value={editingEdu.type}
+                  onChange={(e) => setEditingEdu({ ...editingEdu, type: e.target.value })}
+                  className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="university">🎓 มหาวิทยาลัย</option>
+                  <option value="master">🎓 ปริญญาโท</option>
+                  <option value="doctorate">🎓 ปริญญาเอก</option>
+                  <option value="highschool">🏫 มัธยมศึกษา</option>
+                  <option value="vocational">🏛️ อาชีวศึกษา</option>
+                  <option value="other">📚 อื่นๆ</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  สาขาวิชา *
+                </label>
+                <input
+                  type="text"
+                  value={editingEdu.field}
+                  onChange={(e) => setEditingEdu({ ...editingEdu, field: e.target.value })}
+                  className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  สถาบันการศึกษา *
+                </label>
+                <input
+                  type="text"
+                  value={editingEdu.institution}
+                  onChange={(e) => setEditingEdu({ ...editingEdu, institution: e.target.value })}
+                  className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    สถานที่ (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingEdu.location || ""}
+                    onChange={(e) => setEditingEdu({ ...editingEdu, location: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    สถานะการศึกษา
+                  </label>
+                  <select
+                    value={editingEdu.status || "studying"}
+                    onChange={(e) => setEditingEdu({ ...editingEdu, status: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="studying">📖 กำลังศึกษา</option>
+                    <option value="graduated">✅ จบการศึกษาแล้ว</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    ปีการศึกษา (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingEdu.year || ""}
+                    onChange={(e) => setEditingEdu({ ...editingEdu, year: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    เกรดเฉลี่ย GPA (ถ้ามี)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingEdu.gpa || ""}
+                    onChange={(e) => setEditingEdu({ ...editingEdu, gpa: e.target.value })}
+                    className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleUpdateEducation}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold py-3 px-6 rounded-xl shadow-lg"
+              >
+                💾 บันทึกการเปลี่ยนแปลง
+              </button>
+              <button
+                onClick={() => setEditingEdu(null)}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 px-6 rounded-xl"
+              >
+                ❌ ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Experience Modal */}
       {showAddExp && (
