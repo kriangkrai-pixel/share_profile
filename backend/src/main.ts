@@ -3,7 +3,9 @@ import { AppModule } from './app.module';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { json, urlencoded } from 'express';
 
-async function bootstrap() {
+let appInstance: any = null;
+
+async function createApp() {
   const app = await NestFactory.create(AppModule);
 
   app.use(json({ limit: '10mb' }));
@@ -15,10 +17,11 @@ async function bootstrap() {
     origin: [
       'http://localhost:3000',
       'http://127.0.0.1:3000',
-      process.env.FRONTEND_URL || 'http://localhost:3000'
+      process.env.FRONTEND_URL || 'http://localhost:3000',
+      '*'
     ],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     exposedHeaders: ['Set-Cookie'],
   });
@@ -48,10 +51,30 @@ async function bootstrap() {
   // Set global prefix
   app.setGlobalPrefix('api');
 
+  return app;
+}
+
+async function bootstrap() {
+  const app = await createApp();
   const port = process.env.PORT || 3001;
   await app.listen(port);
   console.log(`🚀 Backend server is running on http://localhost:${port}`);
   console.log(`📦 Body parser limit: 10mb (supports Base64 images)`);
 }
-bootstrap();
+
+// ถ้าเป็นการรัน Local (ในเครื่องตัวเอง) ให้ทำงานปกติ
+if (process.env.NODE_ENV !== 'production') {
+  bootstrap();
+}
+
+// ถ้าอยู่บน Vercel ให้ Export ออกไปเป็น Function
+export default async (req: any, res: any) => {
+  if (!appInstance) {
+    appInstance = await createApp();
+    await appInstance.init();
+  }
+  
+  const instance = appInstance.getHttpAdapter().getInstance();
+  return instance(req, res);
+};
 
