@@ -723,18 +723,29 @@ export default function UserProfilePage() {
 
           <div className="flex justify-center md:justify-end animate-fade-in">
             <div className="relative">
-              <div className="absolute inset-0 rounded-full border-4 animate-ping opacity-20" style={{ borderColor: theme.primaryColor }}></div>
-              <div className="absolute -inset-4 rounded-full border-2 animate-pulse" style={{ borderColor: theme.secondaryColor }}></div>
+              {(widget.imageUrl || profile.heroImage) ? (
+                <>
+                  <div className="absolute inset-0 rounded-full border-4 animate-ping opacity-20" style={{ borderColor: theme.primaryColor }}></div>
+                  <div className="absolute -inset-4 rounded-full border-2 animate-pulse" style={{ borderColor: theme.secondaryColor }}></div>
 
-              <Image
-                src={widget.imageUrl || profile.heroImage || "/img.png"}
-                alt="Profile Picture"
-                width={450}
-                height={450}
-                priority
-                quality={90}
-                className="rounded-full border-8 border-white shadow-2xl relative z-10 hover:scale-105 transition-transform duration-300 object-cover"
-              />
+                  <Image
+                    src={widget.imageUrl || profile.heroImage || ""}
+                    alt="Profile Picture"
+                    width={450}
+                    height={450}
+                    priority
+                    quality={90}
+                    className="rounded-full border-8 border-white shadow-2xl relative z-10 hover:scale-105 transition-transform duration-300 object-cover"
+                  />
+                </>
+              ) : (
+                <div 
+                  className="rounded-full border-8 border-white shadow-2xl relative z-10 w-[450px] h-[450px] flex items-center justify-center"
+                  style={{ backgroundColor: '#f3f4f6' }}
+                >
+                  <span className="text-gray-400 text-4xl">👤</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1164,16 +1175,27 @@ export default function UserProfilePage() {
               <div className="rounded-2xl border-2 bg-white p-8 shadow-xl h-full flex flex-col hover:shadow-2xl transition-all duration-300" style={{ borderColor: theme.primaryColor }}>
                 <div className="flex flex-col items-center text-center mb-6">
                   <div className="relative group">
-                    <div className="absolute inset-0 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity bg-primary"></div>
-                    <Image
-                      src={widget.imageUrl || profile.contactImage || "/img.png"}
-                      alt="Profile Picture"
-                      width={120}
-                      height={120}
-                      loading="lazy"
-                      quality={85}
-                      className="rounded-full border-4 border-white shadow-xl relative z-10 group-hover:scale-110 transition-transform duration-300 object-cover"
-                    />
+                    {(widget.imageUrl || profile.contactImage) ? (
+                      <>
+                        <div className="absolute inset-0 rounded-full blur-xl opacity-50 group-hover:opacity-75 transition-opacity bg-primary"></div>
+                        <Image
+                          src={widget.imageUrl || profile.contactImage || ""}
+                          alt="Profile Picture"
+                          width={120}
+                          height={120}
+                          loading="lazy"
+                          quality={85}
+                          className="rounded-full border-4 border-white shadow-xl relative z-10 group-hover:scale-110 transition-transform duration-300 object-cover"
+                        />
+                      </>
+                    ) : (
+                      <div 
+                        className="rounded-full border-4 border-white shadow-xl relative z-10 w-[120px] h-[120px] flex items-center justify-center"
+                        style={{ backgroundColor: '#f3f4f6' }}
+                      >
+                        <span className="text-gray-400 text-2xl">👤</span>
+                      </div>
+                    )}
                   </div>
                   <h3 className="mt-4 text-2xl font-bold" style={{ color: theme.textColor }}>{profile.name}</h3>
                   <p className="mt-2 text-sm" style={{ color: theme.textColor }}>{profile.description}</p>
@@ -1625,16 +1647,25 @@ export default function UserProfilePage() {
           </div>
 
           <div className="flex justify-center md:justify-end">
-            <Image
-              src={profile.heroImage || "/img.png"}
-              alt="Profile Picture"
-              width={450}
-              height={450}
-              priority
-              quality={90}
-              className="rounded-full border-4 shadow-lg object-cover"
-              style={{ borderColor: theme.primaryColor }}
-            />
+            {profile.heroImage ? (
+              <Image
+                src={profile.heroImage}
+                alt="Profile Picture"
+                width={450}
+                height={450}
+                priority
+                quality={90}
+                className="rounded-full border-4 shadow-lg object-cover"
+                style={{ borderColor: theme.primaryColor }}
+              />
+            ) : (
+              <div 
+                className="rounded-full border-4 shadow-lg w-[450px] h-[450px] flex items-center justify-center"
+                style={{ borderColor: theme.primaryColor, backgroundColor: '#f3f4f6' }}
+              >
+                <span className="text-gray-400 text-4xl">👤</span>
+              </div>
+            )}
           </div>
         </div>
       </section>
