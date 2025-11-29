@@ -1,19 +1,30 @@
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
+import { useRouter, useParams } from "next/navigation";
+import { API_ENDPOINTS, apiRequest, isConnectionError, getAuthToken } from "@/lib/api-config";
+import { getTokenForUser, removeTokenForUser } from "@/lib/jwt-utils";
 
-const SESSION_TIMEOUT = 10 * 60 * 1000; // 30 นาที
+const SESSION_TIMEOUT = 10 * 60 * 1000; // 10 นาที
 const INACTIVITY_CHECK_INTERVAL = 60 * 1000; // ตรวจสอบทุก 1 นาที
 
-export function useAdminSession() {
+/**
+ * Hook สำหรับจัดการ session ของ admin
+ * รองรับ multi-user โดยตรวจสอบ token แยกตาม username
+ * @param username optional username สำหรับ user-specific admin pages
+ */
+export function useAdminSession(username?: string) {
   const router = useRouter();
+  const params = useParams();
+  // ถ้าไม่มี username ใน parameter ให้ดึงจาก URL
+  const urlUsername = username || (params?.username as string);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const logout = async () => {
     try {
+      // ส่ง username เพื่อใช้ token ที่ถูกต้อง
       await apiRequest(API_ENDPOINTS.LOGOUT, { 
         method: "POST",
+        username: urlUsername,
       });
     } catch (error) {
       // Log connection errors but don't block logout
@@ -23,17 +34,28 @@ export function useAdminSession() {
         console.error("Logout error:", error);
       }
     } finally {
-      localStorage.removeItem("authToken");
-      localStorage.removeItem("adminToken");
-      localStorage.removeItem("adminLoginTime");
+      // ลบ token ของ user นี้เท่านั้น
+      if (urlUsername) {
+        removeTokenForUser(urlUsername);
+        localStorage.removeItem(`adminLoginTime_${urlUsername}`);
+      } else {
+        // Fallback สำหรับกรณีที่ไม่มี username
+        localStorage.removeItem("authToken");
+        localStorage.removeItem("adminToken");
+        localStorage.removeItem("adminLoginTime");
+      }
       router.push("/admin/login");
     }
   };
 
   const resetSession = () => {
-    // เก็บเวลาที่ login
+    // เก็บเวลาที่ login สำหรับ user นี้
     const loginTime = Date.now();
-    localStorage.setItem("adminLoginTime", loginTime.toString());
+    if (urlUsername) {
+      localStorage.setItem(`adminLoginTime_${urlUsername}`, loginTime.toString());
+    } else {
+      localStorage.setItem("adminLoginTime", loginTime.toString());
+    }
 
     // ล้าง timeout เก่า
     if (timeoutRef.current) {
@@ -47,8 +69,15 @@ export function useAdminSession() {
   };
 
   const checkSession = () => {
-    const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
-    const loginTimeStr = localStorage.getItem("adminLoginTime");
+    // ดึง token ตาม username
+    const token = urlUsername 
+      ? getTokenForUser(urlUsername)
+      : getAuthToken();
+    
+    const loginTimeKey = urlUsername 
+      ? `adminLoginTime_${urlUsername}`
+      : "adminLoginTime";
+    const loginTimeStr = localStorage.getItem(loginTimeKey);
 
     if (!token || !loginTimeStr) {
       logout();
@@ -65,15 +94,22 @@ export function useAdminSession() {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem("authToken") || localStorage.getItem("adminToken");
+    // ดึง token ตาม username
+    const token = urlUsername 
+      ? getTokenForUser(urlUsername)
+      : getAuthToken();
     
     if (!token) {
-      router.push("/admin/login");
+      // ไม่ต้อง redirect ถ้าไม่มี token เพราะ layout จะจัดการเอง
       return;
     }
 
     // ตรวจสอบว่ามี loginTime หรือไม่ ถ้าไม่มีให้ตั้งค่าใหม่
-    const loginTimeStr = localStorage.getItem("adminLoginTime");
+    const loginTimeKey = urlUsername 
+      ? `adminLoginTime_${urlUsername}`
+      : "adminLoginTime";
+    const loginTimeStr = localStorage.getItem(loginTimeKey);
+    
     if (!loginTimeStr) {
       resetSession();
     } else {
@@ -119,7 +155,7 @@ export function useAdminSession() {
         window.removeEventListener(event, handleActivity);
       });
     };
-  }, [router]);
+  }, [router, urlUsername]);
 
   return { logout };
 }

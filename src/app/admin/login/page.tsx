@@ -10,7 +10,29 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [usernameError, setUsernameError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const validateUsername = (value: string): string => {
+    if (!value) {
+      return "กรุณากรอกชื่อผู้ใช้";
+    }
+    if (!/^[A-Z][a-zA-Z0-9_]{2,}$/.test(value)) {
+      return "ชื่อผู้ใช้ต้องขึ้นต้นด้วยตัวอักษรพิมพ์ใหญ่และตามด้วยตัวอักษร ตัวเลข หรือ underscore อย่างน้อย 2 ตัว";
+    }
+    return "";
+  };
+
+  const validatePassword = (value: string): string => {
+    if (!value) {
+      return "กรุณากรอกรหัสผ่าน";
+    }
+    if (value.length < 6) {
+      return "รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร";
+    }
+    return "";
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,11 +65,23 @@ export default function LoginPage() {
 
       const data = await response.json();
 
-      // บันทึก JWT token และเวลาที่ login ไว้ใน localStorage
-      localStorage.setItem("authToken", data.token);
-      localStorage.setItem("adminToken", data.token); // Keep for backward compatibility
-      localStorage.setItem("adminLoginTime", Date.now().toString());
-      router.push("/admin");
+      // Redirect ไปที่ /[username]/admin
+      const loggedInUsername = data.user?.username || username;
+      
+      if (loggedInUsername) {
+        // บันทึก JWT token แยกตาม username เพื่อให้ login หลาย user พร้อมกันได้
+        const { setTokenForUser } = await import("@/lib/jwt-utils");
+        setTokenForUser(loggedInUsername, data.token);
+        
+        // เก็บเวลาที่ login สำหรับ user นี้
+        localStorage.setItem(`adminLoginTime_${loggedInUsername}`, Date.now().toString());
+        
+        router.push(`/${loggedInUsername}/admin`);
+      } else {
+        // Fallback สำหรับกรณีที่ไม่มี username - redirect ไป login อีกครั้ง
+        console.warn("⚠️ No username found in login response, redirecting to login");
+        router.push("/admin/login");
+      }
     } catch (err) {
       console.error("Error during login:", err);
       if (isConnectionError(err)) {
@@ -108,12 +142,27 @@ export default function LoginPage() {
                   id="username"
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required
-                  className="w-full rounded-xl border-2 border-gray-300 bg-white pl-12 pr-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all"
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    if (usernameError) {
+                      setUsernameError(validateUsername(e.target.value));
+                    }
+                  }}
+                  onBlur={() => {
+                    setUsernameError(validateUsername(username));
+                  }}
+                  className={`w-full rounded-xl border-2 ${
+                    usernameError ? "border-red-300 bg-red-50" : "border-gray-300 bg-white"
+                  } pl-12 pr-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all`}
                   placeholder="กรอกชื่อผู้ใช้"
                 />
               </div>
+              {usernameError && (
+                <div className="mt-2 p-3 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-2 animate-fade-in">
+                  <span className="text-lg flex-shrink-0">⚠️</span>
+                  <span>{usernameError}</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -126,12 +175,27 @@ export default function LoginPage() {
                   id="password"
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full rounded-xl border-2 border-gray-300 bg-white pl-12 pr-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all"
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (passwordError) {
+                      setPasswordError(validatePassword(e.target.value));
+                    }
+                  }}
+                  onBlur={() => {
+                    setPasswordError(validatePassword(password));
+                  }}
+                  className={`w-full rounded-xl border-2 ${
+                    passwordError ? "border-red-300 bg-red-50" : "border-gray-300 bg-white"
+                  } pl-12 pr-4 py-3 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all`}
                   placeholder="กรอกรหัสผ่าน"
                 />
               </div>
+              {passwordError && (
+                <div className="mt-2 p-3 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl text-sm flex items-start gap-2 animate-fade-in">
+                  <span className="text-lg flex-shrink-0">⚠️</span>
+                  <span>{passwordError}</span>
+                </div>
+              )}
             </div>
 
             <button

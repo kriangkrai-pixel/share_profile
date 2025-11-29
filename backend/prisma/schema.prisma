@@ -11,20 +11,21 @@ datasource db {
 }
 
 model User {
-  id              Int              @id @default(autoincrement())
-  username        String           @unique
-  email           String           @unique
-  password        String
-  name            String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  pageContent     PageContent?
-  Profile         Profile?
-  themePreference ThemePreference?
-  siteSettings    SiteSettings?
-  editHistory     EditHistory[]
-  receivedMessages ContactMessage[]
-  layouts         Layout[]
+  id                    Int              @id @default(autoincrement())
+  username              String           @unique
+  email                 String           @unique
+  password              String
+  name                  String?
+  allowMultipleSessions Boolean          @default(true)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  pageContent           PageContent?
+  Profile               Profile?
+  themePreference       ThemePreference?
+  siteSettings          SiteSettings?
+  editHistory           EditHistory[]
+  receivedMessages      ContactMessage[]
+  layouts               Layout[]
 
   @@index([username])
 }

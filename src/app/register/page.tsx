@@ -148,10 +148,23 @@ export default function RegisterPage() {
 
       const data = await response.json();
 
-      // Store JWT token
-      localStorage.setItem("authToken", data.token);
-      localStorage.setItem("adminToken", data.token); // Keep for backward compatibility
-      router.push("/admin");
+      // Redirect ไปที่ /[username]/admin
+      const registeredUsername = data.user?.username || username;
+      
+      if (registeredUsername) {
+        // บันทึก JWT token แยกตาม username เพื่อให้ login หลาย user พร้อมกันได้
+        const { setTokenForUser } = await import("@/lib/jwt-utils");
+        setTokenForUser(registeredUsername, data.token);
+        
+        // เก็บเวลาที่ login สำหรับ user นี้
+        localStorage.setItem(`adminLoginTime_${registeredUsername}`, Date.now().toString());
+        
+        router.push(`/${registeredUsername}/admin`);
+      } else {
+        // Fallback สำหรับกรณีที่ไม่มี username - redirect ไป login
+        console.warn("⚠️ No username found in registration response, redirecting to login");
+        router.push("/admin/login");
+      }
     } catch (err: any) {
       console.error("Error during registration:", err);
       if (isConnectionError(err) || err?.isConnectionError) {

@@ -7,11 +7,12 @@
  */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
 import { getUsernameFromToken } from "@/lib/jwt-utils";
+import { useSiteSettings } from "../../context/SiteSettingsContext";
 import type { HeaderMenuLink, HeaderCta, FooterLink } from "../../context/SiteSettingsContext";
 
 type EditableLink = (HeaderMenuLink | FooterLink) & { id: string };
@@ -127,7 +128,15 @@ const PRESET_SECTIONS: HeaderMenuLink[] = [
 
 export default function HeaderFooterPage() {
   const router = useRouter();
-  useAdminSession();
+  const pathname = usePathname();
+  
+  // ดึง username จาก URL pathname (สำหรับ /[username]/admin/header-footer)
+  const urlMatch = pathname?.match(/^\/([^/]+)\/admin\/header-footer/);
+  const urlUsername = urlMatch ? urlMatch[1] : null;
+  
+  // ส่ง username ไปให้ useAdminSession เพื่อใช้ token ที่ถูกต้อง
+  useAdminSession(urlUsername || undefined);
+  const { refreshSettings } = useSiteSettings();
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -136,16 +145,27 @@ export default function HeaderFooterPage() {
   const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
+    // ใช้ token ตาม username จาก URL หรือ token เก่า
+    let token: string | null = null;
+    if (urlUsername) {
+      const { getTokenForUser } = require("@/lib/jwt-utils");
+      token = getTokenForUser(urlUsername);
+    }
+    
+    if (!token) {
+      token = localStorage.getItem("adminToken") || localStorage.getItem("authToken");
+    }
+    
     if (!token) {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
-      const currentUsername = getUsernameFromToken();
+      // ดึง username จาก token ที่ถูกต้อง
+      const currentUsername = getUsernameFromToken(urlUsername || undefined);
       setUsername(currentUsername);
       loadSettings();
     }
-  }, [router]);
+  }, [router, urlUsername]);
 
   /**
    * โหลดการตั้งค่าจาก API
@@ -154,12 +174,14 @@ export default function HeaderFooterPage() {
     try {
       // โหลดสีจาก Theme Preferences API
       const themeResponse = await apiRequest(API_ENDPOINTS.THEME_ME, {
+        username: urlUsername || username || undefined,
         method: "GET",
         cache: "no-store",
       });
       
       // โหลดข้อมูลอื่นๆ จาก Settings API
       const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS_ME, {
+        username: urlUsername || username || undefined,
         method: "GET",
         cache: "no-store",
       });
@@ -175,6 +197,7 @@ export default function HeaderFooterPage() {
       } else if (settingsResponse.status === 404 || settingsResponse.status === 401) {
         console.warn("⚠️ Personal settings not found, falling back to global defaults");
         const fallbackResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
+          username: urlUsername || username || undefined,
           method: "GET",
           cache: "no-store",
         });
@@ -261,6 +284,7 @@ export default function HeaderFooterPage() {
 
       // บันทึกสีไปยัง Theme Preferences API
       const themeResponse = await apiRequest(API_ENDPOINTS.THEME_UPDATE, {
+        username: urlUsername || username || undefined,
         method: "PUT",
         body: JSON.stringify({
           headerBgColor: settings.headerBgColor,
@@ -297,6 +321,7 @@ export default function HeaderFooterPage() {
       };
 
       const settingsResponse = await apiRequest(API_ENDPOINTS.SETTINGS_ME, {
+        username: urlUsername || username || undefined,
         method: "PUT",
         body: JSON.stringify(settingsPayload),
       });
@@ -341,6 +366,12 @@ export default function HeaderFooterPage() {
         showMessage("error", `❌ เกิดข้อผิดพลาดในการบันทึก:\n${errorMessage}`);
       } else {
         showMessage("success", "✅ บันทึกการตั้งค่าสำเร็จ!");
+        // Refresh settings ใน context เพื่อให้ Footer component อัปเดตข้อมูลใหม่
+        try {
+          await refreshSettings();
+        } catch (error) {
+          console.warn("⚠️ Failed to refresh settings context:", error);
+        }
       }
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -445,7 +476,7 @@ export default function HeaderFooterPage() {
 
             <div className="flex gap-3">
               <Link
-                href="/admin"
+                href={username ? `/${username}/admin` : "/admin/login"}
                 className="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all"
               >
                 ← กลับ
@@ -692,7 +723,7 @@ export default function HeaderFooterPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">อีเมล</label>
                   <input
@@ -713,19 +744,9 @@ export default function HeaderFooterPage() {
                     placeholder="Bangkok, Thailand"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">เบอร์โทร</label>
-                  <input
-                    type="tel"
-                    value={settings.footerPhone}
-                    onChange={(e) => setSettings({ ...settings, footerPhone: e.target.value })}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    placeholder="080-000-1234"
-                  />
-                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
                   <input
                     type="checkbox"
@@ -743,15 +764,6 @@ export default function HeaderFooterPage() {
                     className="w-4 h-4 text-purple-600 border-gray-300 rounded"
                   />
                   แสดงที่อยู่
-                </label>
-                <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 bg-purple-50 border border-purple-100 rounded-xl px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={settings.footerShowPhone}
-                    onChange={(e) => setSettings({ ...settings, footerShowPhone: e.target.checked })}
-                    className="w-4 h-4 text-purple-600 border-gray-300 rounded"
-                  />
-                  แสดงเบอร์โทร
                 </label>
               </div>
 
@@ -847,25 +859,56 @@ export default function HeaderFooterPage() {
                 className="p-4 rounded-lg border-2 border-gray-200"
                 style={{ backgroundColor: settings.footerBgColor, color: settings.footerTextColor }}
               >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                   <div>
                     <h3 className="text-xl font-bold mb-2">
                       {settings.footerLogoText || "PORTFOLIO.PRO"}
                     </h3>
-                    <p className="text-sm opacity-90">
+                    <p className="text-sm mt-2" style={{ opacity: 0.9 }}>
                       {settings.footerDescription || "คำอธิบาย..."}
                     </p>
                   </div>
                   <div className="flex md:justify-center">
-                    <ul className="space-y-2 text-sm">
-                      {settings.footerLinks.slice(0, 4).map((link) => (
+                    <ul className="space-y-2 text-sm" style={{ opacity: 0.9 }}>
+                      {settings.footerLinks.map((link) => (
                         <li key={link.id}>{link.label || "ลิงก์"}</li>
                       ))}
                     </ul>
                   </div>
-                  <div className="text-sm space-y-1">
-                    <p>อีเมล: {settings.footerEmail || "-"}</p>
-                    <p>ที่อยู่: {settings.footerLocation || "-"}</p>
+                  <div className="flex flex-col items-start md:items-end gap-1 text-sm leading-tight">
+                    {settings.footerShowEmail !== false && (
+                      <p className="font-medium">
+                        <span className="opacity-70 mr-1">อีเมล:</span>
+                        <span className="break-all">{settings.footerEmail || "-"}</span>
+                      </p>
+                    )}
+                    {settings.footerShowLocation !== false && (
+                      <p className="font-medium">
+                        <span className="opacity-70 mr-1">ที่อยู่:</span>
+                        <span className="break-words">{settings.footerLocation || "-"}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bottom Section - Copyright and Links */}
+                <div
+                  className="mt-8 flex flex-col md:flex-row items-center justify-between gap-4 border-t pt-6"
+                  style={{ borderColor: settings.footerTextColor, opacity: 0.3 }}
+                >
+                  <p className="text-sm" style={{ opacity: 0.9 }}>
+                    © {new Date().getFullYear()} {settings.footerLogoText || "PORTFOLIO.PRO"}. All rights reserved.
+                  </p>
+                  <div className="flex items-center gap-4">
+                    {settings.footerLinks.slice(0, 2).map((link) => (
+                      <span
+                        key={`footer-bottom-${link.id}`}
+                        className="text-sm"
+                        style={{ opacity: 0.9 }}
+                      >
+                        {link.label || "ลิงก์"}
+                      </span>
+                    ))}
                   </div>
                 </div>
               </div>

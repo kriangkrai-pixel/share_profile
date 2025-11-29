@@ -62,7 +62,12 @@ export default function Header() {
     palette.text,
   ]);
 
-  if (pathname?.startsWith("/admin") || pathname === "/register") {
+  // ซ่อน Header ในหน้า admin ทั้งหมด (รวม /admin และ /[username]/admin)
+  if (
+    pathname?.startsWith("/admin") || 
+    pathname === "/register" ||
+    pathname?.includes("/admin")
+  ) {
     return null;
   }
 

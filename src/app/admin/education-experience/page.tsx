@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
 import { useProfile } from "../../context/ProfileContext";
@@ -30,7 +30,14 @@ interface Experience {
 
 export default function EducationExperiencePage() {
   const router = useRouter();
-  useAdminSession();
+  const pathname = usePathname();
+  
+  // ดึง username จาก URL pathname (สำหรับ /[username]/admin/education-experience)
+  const urlMatch = pathname?.match(/^\/([^/]+)\/admin\/education-experience/);
+  const urlUsername = urlMatch ? urlMatch[1] : null;
+  
+  // ส่ง username ไปให้ useAdminSession เพื่อใช้ token ที่ถูกต้อง
+  useAdminSession(urlUsername || undefined);
   const { profile, updateProfile, updateExperience, refreshProfile } = useProfile();
   const [authenticated, setAuthenticated] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -65,17 +72,28 @@ export default function EducationExperiencePage() {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
+    // ใช้ token ตาม username จาก URL หรือ token เก่า
+    let token: string | null = null;
+    if (urlUsername) {
+      const { getTokenForUser } = require("@/lib/jwt-utils");
+      token = getTokenForUser(urlUsername);
+    }
+    
+    if (!token) {
+      token = localStorage.getItem("adminToken") || localStorage.getItem("authToken");
+    }
+    
     if (!token) {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
-      const currentUsername = getUsernameFromToken();
+      // ดึง username จาก token ที่ถูกต้อง
+      const currentUsername = getUsernameFromToken(urlUsername || undefined);
       setUsername(currentUsername);
       loadEducations();
       loadExperiences();
     }
-  }, [router]);
+  }, [router, urlUsername]);
 
   useEffect(() => {
     // อัปเดตข้อมูลประสบการณ์จาก profile context
@@ -90,6 +108,7 @@ export default function EducationExperiencePage() {
       const response = await apiRequest(API_ENDPOINTS.EDUCATION, {
         method: "GET",
         cache: "no-store",
+        username: urlUsername || username || undefined,
       });
       
       if (!response.ok) {
@@ -113,6 +132,7 @@ export default function EducationExperiencePage() {
   const loadExperiences = async () => {
     try {
       const response = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
+        username: urlUsername || username || undefined,
         method: "GET",
         cache: "no-store",
       });
@@ -145,6 +165,7 @@ export default function EducationExperiencePage() {
       const response = await apiRequest(API_ENDPOINTS.EDUCATION, {
         method: "POST",
         body: JSON.stringify(newEdu),
+        username: urlUsername || username || undefined,
       });
 
       if (response.ok) {
@@ -193,6 +214,7 @@ export default function EducationExperiencePage() {
             status: editingEdu.status || "studying",
           },
         }),
+        username: urlUsername || username || undefined,
       });
 
       if (response.ok) {
@@ -215,6 +237,7 @@ export default function EducationExperiencePage() {
     try {
       const response = await apiRequest(`${API_ENDPOINTS.EDUCATION}?id=${id}`, {
         method: "DELETE",
+        username: urlUsername || username || undefined,
       });
 
       if (!response.ok) {
@@ -244,6 +267,7 @@ export default function EducationExperiencePage() {
 
     try {
       const response = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
+        username: urlUsername || username || undefined,
         method: "POST",
         body: JSON.stringify(newExp),
       });
@@ -271,6 +295,7 @@ export default function EducationExperiencePage() {
 
     try {
       const response = await apiRequest(API_ENDPOINTS.EXPERIENCE, {
+        username: urlUsername || username || undefined,
         method: "PUT",
         body: JSON.stringify(editingExp),
       });
@@ -292,6 +317,7 @@ export default function EducationExperiencePage() {
     try {
       const response = await apiRequest(`${API_ENDPOINTS.EXPERIENCE}?id=${id}`, {
         method: "DELETE",
+        username: urlUsername || username || undefined,
       });
 
       if (!response.ok) {
@@ -323,7 +349,7 @@ export default function EducationExperiencePage() {
           <div className="flex items-center justify-between">
             <div>
               <Link
-                href="/admin"
+                href={username ? `/${username}/admin` : "/admin/login"}
                 className="text-green-600 hover:text-green-700 text-sm font-medium inline-flex items-center gap-2 mb-2"
               >
                 <span>←</span>

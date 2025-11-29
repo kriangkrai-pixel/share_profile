@@ -1,7 +1,9 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, Get, Put, UseGuards, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UpdateUserSettingsDto } from './dto/update-user-settings.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -35,6 +37,26 @@ export class AuthController {
   async logout() {
     console.log('🚪 Logout request');
     return this.authService.logout();
+  }
+
+  /**
+   * GET /api/auth/user/settings/me
+   * ดึงการตั้งค่าของ user ปัจจุบัน
+   */
+  @Get('user/settings/me')
+  @UseGuards(JwtAuthGuard)
+  async getUserSettings(@Request() req) {
+    return this.authService.getUserSettings(req.user.userId);
+  }
+
+  /**
+   * PUT /api/auth/user/settings/me
+   * อัปเดตการตั้งค่าของ user ปัจจุบัน
+   */
+  @Put('user/settings/me')
+  @UseGuards(JwtAuthGuard)
+  async updateUserSettings(@Request() req, @Body() updateDto: UpdateUserSettingsDto) {
+    return this.authService.updateUserSettings(req.user.userId, updateDto);
   }
 }
 

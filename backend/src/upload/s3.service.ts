@@ -153,8 +153,66 @@ export class S3Service {
       this.logger.log(`File retrieved successfully: ${key}`);
       return { body: buffer, contentType };
     } catch (error: any) {
-      this.logger.error(`Error retrieving file: ${error.message}`, error.stack);
-      throw new Error(`Failed to retrieve file: ${error.message}`);
+      // ปรับปรุง error handling ให้แสดงข้อมูลชัดเจนขึ้น
+      const errorName = error.name || error.constructor?.name || 'UnknownError';
+      const errorCode = error.$metadata?.httpStatusCode || error.Code || error.statusCode || 'N/A';
+      const errorMessage = error.message || String(error) || 'Unknown error occurred';
+      const requestId = error.$metadata?.requestId || error.RequestId || 'N/A';
+      
+      // ตรวจสอบว่าเป็น NoSuchKey (ไฟล์ไม่มี) หรือไม่
+      const isNotFound = 
+        errorName === 'NoSuchKey' ||
+        errorName === 'NotFound' ||
+        errorCode === 404 ||
+        errorMessage.includes('NoSuchKey') ||
+        errorMessage.includes('not found') ||
+        errorMessage.includes('NotFound') ||
+        errorMessage.includes('does not exist');
+      
+      if (isNotFound) {
+        // ไฟล์ไม่มีใน S3 - ไม่ใช่ error ร้ายแรง (เป็นเรื่องปกติสำหรับ theme config)
+        // ไม่ต้อง log เพราะเป็นเรื่องปกติ (ลด log noise)
+        // this.logger.debug(`File not found in S3: ${key} (this is normal for new users)`);
+        throw new Error(`File not found: ${key}`);
+      }
+      
+      // สำหรับ UnknownError ให้ลองหา error details เพิ่มเติม
+      let detailedMessage = errorMessage;
+      if (errorName === 'UnknownError' || errorCode === 'N/A') {
+        // ลองดึง error details จาก error object
+        try {
+          const errorDetails: any = {
+            name: error.name,
+            code: error.code,
+            statusCode: error.statusCode,
+            $metadata: error.$metadata,
+            message: error.message,
+            cause: error.cause,
+          };
+          // ลอง stringify error object เพื่อดูรายละเอียด
+          detailedMessage = `UnknownError details: ${JSON.stringify(errorDetails)}`;
+        } catch (e) {
+          detailedMessage = `UnknownError: ${String(error)}`;
+        }
+      }
+      
+      // Log error พร้อมรายละเอียดเต็ม (สำหรับ error จริงๆ)
+      this.logger.error(
+        `Error retrieving file "${key}": ${errorName} (HTTP ${errorCode}, RequestId: ${requestId}) - ${detailedMessage}`,
+        {
+          key,
+          bucket: this.bucket,
+          errorName,
+          errorCode,
+          errorMessage: detailedMessage,
+          requestId,
+          stack: error.stack,
+          fullError: error,
+        },
+      );
+      
+      // สร้าง error message ที่ชัดเจน
+      throw new Error(`Failed to retrieve file: ${errorName} - ${detailedMessage}`);
     }
   }
 

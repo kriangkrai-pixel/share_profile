@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
@@ -20,7 +20,14 @@ interface EditHistoryItem {
 
 export default function EditHistoryPage() {
   const router = useRouter();
-  useAdminSession();
+  const pathname = usePathname();
+  
+  // ดึง username จาก URL pathname (สำหรับ /[username]/admin/edit-history)
+  const urlMatch = pathname?.match(/^\/([^/]+)\/admin\/edit-history/);
+  const urlUsername = urlMatch ? urlMatch[1] : null;
+  
+  // ส่ง username ไปให้ useAdminSession เพื่อใช้ token ที่ถูกต้อง
+  useAdminSession(urlUsername || undefined);
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<EditHistoryItem[]>([]);
@@ -31,17 +38,28 @@ export default function EditHistoryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
+    // ใช้ token ตาม username จาก URL หรือ token เก่า
+    let token: string | null = null;
+    if (urlUsername) {
+      const { getTokenForUser } = require("@/lib/jwt-utils");
+      token = getTokenForUser(urlUsername);
+    }
+    
+    if (!token) {
+      token = localStorage.getItem("adminToken") || localStorage.getItem("authToken");
+    }
+    
     if (!token) {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
       setLoading(false);
-      const currentUsername = getUsernameFromToken();
+      // ดึง username จาก token ที่ถูกต้อง
+      const currentUsername = getUsernameFromToken(urlUsername || undefined);
       setUsername(currentUsername);
       fetchHistory();
     }
-  }, [router, filter]);
+  }, [router, filter, urlUsername]);
 
   const fetchHistory = async () => {
     try {
@@ -50,6 +68,7 @@ export default function EditHistoryPage() {
         ? API_ENDPOINTS.EDIT_HISTORY
         : `${API_ENDPOINTS.EDIT_HISTORY}?page=${filter}`;
       const response = await apiRequest(url, {
+        username: urlUsername || username || undefined,
         method: "GET",
         cache: "no-store",
       });
@@ -175,13 +194,13 @@ export default function EditHistoryPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <a
-                href="/admin"
+              <Link
+                href={username ? `/${username}/admin` : "/admin/login"}
                 className="text-blue-600 hover:text-blue-700 text-sm font-medium inline-flex items-center gap-2 mb-2"
               >
                 <span>←</span>
                 <span>กลับไปหน้า Dashboard</span>
-              </a>
+              </Link>
               <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent flex items-center gap-3">
                 <span className="text-3xl">📜</span>
                 ประวัติการแก้ไข

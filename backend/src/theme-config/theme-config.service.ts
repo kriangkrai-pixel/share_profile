@@ -69,6 +69,9 @@ function mergeThemeConfig(
 export class ThemeConfigService {
   private readonly logger = new Logger(ThemeConfigService.name);
   private readonly prefix = 'config/themes';
+  // Cache สำหรับเก็บผลลัพธ์ว่า user ไหนไม่มี theme config (เพื่อลด S3 requests)
+  private readonly notFoundCache = new Map<string, number>(); // username -> timestamp
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 นาที
 
   constructor(private readonly s3Service: S3Service) {}
 
@@ -79,20 +82,47 @@ export class ThemeConfigService {
       return mergeThemeConfig(DEFAULT_THEME_CONFIG);
     }
 
+    // ตรวจสอบ cache ว่ามีการตรวจสอบแล้วว่าไม่มีไฟล์หรือไม่
+    const cachedNotFound = this.notFoundCache.get(normalized);
+    if (cachedNotFound) {
+      const now = Date.now();
+      if (now - cachedNotFound < this.CACHE_TTL) {
+        // ยังอยู่ใน cache TTL - ไม่ต้อง query S3 อีก
+        return mergeThemeConfig(DEFAULT_THEME_CONFIG, undefined, normalized);
+      } else {
+        // Cache หมดอายุ - ลบออก
+        this.notFoundCache.delete(normalized);
+      }
+    }
+
     const key = `${this.prefix}/${normalized}.json`;
 
     try {
       const { body } = await this.s3Service.getFile(key);
       const parsed = JSON.parse(body.toString('utf-8'));
+      this.logger.log(`Theme config loaded successfully for "${normalized}"`);
+      // ลบ cache ถ้ามี (เพราะตอนนี้มีไฟล์แล้ว)
+      this.notFoundCache.delete(normalized);
       return mergeThemeConfig(DEFAULT_THEME_CONFIG, parsed, normalized);
     } catch (error: any) {
       const message =
         typeof error?.message === 'string'
           ? error.message
           : 'unknown error';
-      this.logger.warn(
-        `Falling back to default theme for "${normalized}": ${message}`,
-      );
+      
+      // ถ้าเป็นไฟล์ไม่มี (not found)
+      if (message.includes('not found') || message.includes('File not found')) {
+        // เก็บใน cache เพื่อลด S3 requests ในอนาคต
+        this.notFoundCache.set(normalized, Date.now());
+        // ไม่ต้อง log เพราะเป็นเรื่องปกติ (ลด log noise)
+        // this.logger.debug(`Theme config not found for "${normalized}", using default theme`);
+      } else {
+        // ถ้าเป็น error อื่นๆ (เช่น network, permission) แสดง warning
+        this.logger.warn(
+          `Falling back to default theme for "${normalized}": ${message}`,
+        );
+      }
+      
       return mergeThemeConfig(DEFAULT_THEME_CONFIG, undefined, normalized);
     }
   }

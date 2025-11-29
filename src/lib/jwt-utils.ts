@@ -44,15 +44,110 @@ export function decodeJWT(token: string): JWTPayload | null {
 }
 
 /**
+ * เก็บ token สำหรับ username นี้
+ * @param username username ของ user
+ * @param token JWT token
+ */
+export function setTokenForUser(username: string, token: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  const key = `authToken_${username}`;
+  localStorage.setItem(key, token);
+  // ไม่ต้องเขียนทับ authToken และ adminToken แบบ global เพราะจะทำให้ user อื่นโดน logout
+  // เก็บเฉพาะ token แยกตาม username เท่านั้น
+  
+  // เก็บรายชื่อ users ที่ login ไว้
+  const loggedInUsers = getLoggedInUsers();
+  if (!loggedInUsers.includes(username)) {
+    loggedInUsers.push(username);
+    localStorage.setItem('loggedInUsers', JSON.stringify(loggedInUsers));
+  }
+  
+  // เก็บเวลาที่ login สำหรับ user นี้
+  localStorage.setItem(`adminLoginTime_${username}`, Date.now().toString());
+}
+
+/**
+ * ดึง token สำหรับ username นี้
+ * @param username username ของ user
+ * @returns JWT token หรือ null
+ */
+export function getTokenForUser(username: string): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  
+  const key = `authToken_${username}`;
+  return localStorage.getItem(key);
+}
+
+/**
+ * ดึงรายชื่อ users ที่ login อยู่
+ * @returns array ของ usernames
+ */
+export function getLoggedInUsers(): string[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+  
+  const stored = localStorage.getItem('loggedInUsers');
+  if (!stored) {
+    return [];
+  }
+  
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * ลบ token สำหรับ username นี้
+ * @param username username ของ user
+ */
+export function removeTokenForUser(username: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  
+  const key = `authToken_${username}`;
+  localStorage.removeItem(key);
+  
+  // อัปเดตรายชื่อ users
+  const loggedInUsers = getLoggedInUsers().filter(u => u !== username);
+  if (loggedInUsers.length === 0) {
+    localStorage.removeItem('loggedInUsers');
+    // ลบ authToken และ adminToken ถ้าไม่มี user login อยู่แล้ว
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('adminToken');
+  } else {
+    localStorage.setItem('loggedInUsers', JSON.stringify(loggedInUsers));
+  }
+}
+
+/**
  * ดึง username จาก JWT token ใน localStorage
+ * @param username optional username เพื่อดึง token ที่เฉพาะเจาะจง
  * @returns username string หรือ null ถ้าไม่มี token หรือ decode ไม่ได้
  */
-export function getUsernameFromToken(): string | null {
+export function getUsernameFromToken(username?: string): string | null {
   if (typeof window === 'undefined') {
     return null;
   }
 
-  const token = localStorage.getItem('authToken') || localStorage.getItem('adminToken');
+  let token: string | null = null;
+  
+  if (username) {
+    // ถ้ามี username ให้ดึง token ที่เฉพาะเจาะจง
+    token = getTokenForUser(username);
+  } else {
+    // ถ้าไม่มี username ให้ใช้ token เก่า (backward compatibility)
+    token = localStorage.getItem('authToken') || localStorage.getItem('adminToken');
+  }
+  
   if (!token) {
     return null;
   }
@@ -63,14 +158,24 @@ export function getUsernameFromToken(): string | null {
 
 /**
  * ดึง user ID จาก JWT token ใน localStorage
+ * @param username optional username เพื่อดึง token ที่เฉพาะเจาะจง
  * @returns user ID number หรือ null ถ้าไม่มี token หรือ decode ไม่ได้
  */
-export function getUserIdFromToken(): number | null {
+export function getUserIdFromToken(username?: string): number | null {
   if (typeof window === 'undefined') {
     return null;
   }
 
-  const token = localStorage.getItem('authToken') || localStorage.getItem('adminToken');
+  let token: string | null = null;
+  
+  if (username) {
+    // ถ้ามี username ให้ดึง token ที่เฉพาะเจาะจง
+    token = getTokenForUser(username);
+  } else {
+    // ถ้าไม่มี username ให้ใช้ token เก่า (backward compatibility)
+    token = localStorage.getItem('authToken') || localStorage.getItem('adminToken');
+  }
+  
   if (!token) {
     return null;
   }

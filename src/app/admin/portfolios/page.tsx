@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAdminSession } from "../../hooks/useAdminSession";
@@ -39,7 +39,17 @@ interface Portfolio {
 
 export default function PortfoliosPage() {
   const router = useRouter();
-  useAdminSession();
+  const pathname = usePathname();
+  
+  // ดึง username จาก URL pathname (สำหรับ /[username]/admin/portfolios)
+  const urlMatch = pathname?.match(/^\/([^/]+)\/admin\/portfolios/);
+  const urlUsername = urlMatch ? urlMatch[1] : null;
+  
+  // Debug: log pathname และ urlUsername
+  console.log("🔍 Portfolios Page - pathname:", pathname, "urlUsername:", urlUsername);
+  
+  // ส่ง username ไปให้ useAdminSession เพื่อใช้ token ที่ถูกต้อง
+  useAdminSession(urlUsername || undefined);
   const [authenticated, setAuthenticated] = useState(false);
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,24 +72,62 @@ export default function PortfoliosPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
-    if (!token) {
-      router.push("/admin/login");
-    } else {
+    // สร้าง async function ภายใน useEffect
+    const initializeData = async () => {
+      console.log("🚀 Initializing Portfolios Page - urlUsername:", urlUsername);
+      
+      // ใช้ token ตาม username จาก URL หรือ token เก่า
+      let token: string | null = null;
+      if (urlUsername) {
+        const { getTokenForUser } = require("@/lib/jwt-utils");
+        token = getTokenForUser(urlUsername);
+        console.log("🔑 Token for", urlUsername, ":", token ? "found" : "not found");
+      }
+      
+      if (!token) {
+        token = localStorage.getItem("adminToken") || localStorage.getItem("authToken");
+        console.log("🔑 Using fallback token:", token ? "found" : "not found");
+      }
+      
+      if (!token) {
+        console.warn("⚠️ No token found, redirecting to login");
+        router.push("/admin/login");
+        return;
+      }
+      
       setAuthenticated(true);
-      const currentUsername = getUsernameFromToken();
+      // ดึง username จาก token ที่ถูกต้อง
+      const currentUsername = getUsernameFromToken(urlUsername || undefined);
+      console.log("👤 Current username from token:", currentUsername, "urlUsername:", urlUsername);
       setUsername(currentUsername);
-      loadPortfolios();
-    }
-  }, [router]);
+      
+      // ใช้ urlUsername เป็นหลัก (เพราะมาจาก URL)
+      const targetUsername = urlUsername || currentUsername;
+      console.log("🎯 Target username for loading portfolios:", targetUsername);
+      
+      if (targetUsername) {
+        await loadPortfolios();
+      } else {
+        console.warn("⚠️ No username found, redirecting to login");
+        router.push("/admin/login");
+      }
+    };
+
+    // เรียกใช้ async function
+    initializeData();
+  }, [router, urlUsername]);
 
   /**
    * โหลดรายการผลงานทั้งหมดจาก API
    */
   const loadPortfolios = async () => {
     try {
+      const targetUsername = urlUsername || username;
+      console.log("🔄 Loading portfolios for username:", targetUsername);
+      
       const response = await apiRequest(API_ENDPOINTS.PROFILE, {
         method: "GET",
+        username: targetUsername || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
       });
       
       if (!response.ok) {
@@ -263,14 +311,18 @@ export default function PortfoliosPage() {
         );
         
         response = await apiRequest(API_ENDPOINTS.PORTFOLIO, {
+          username: urlUsername || username || undefined,
           method: "PUT",
           body: JSON.stringify({ portfolios: updatedPortfolios }),
+          username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
       } else {
         // เพิ่มใหม่: ส่ง single object
         response = await apiRequest(API_ENDPOINTS.PORTFOLIO, {
+          username: urlUsername || username || undefined,
           method: "POST",
           body: JSON.stringify(formData),
+          username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
       }
 
@@ -278,6 +330,7 @@ export default function PortfoliosPage() {
         // บันทึกประวัติ
         try {
           await apiRequest(API_ENDPOINTS.EDIT_HISTORY, {
+            username: urlUsername || username || undefined,
             method: "POST",
             body: JSON.stringify({
               page: "Portfolio",
@@ -285,6 +338,7 @@ export default function PortfoliosPage() {
               itemId: editingPortfolio?.id,
               newValue: formData.title,
             }),
+            username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
           });
         } catch (historyError) {
           console.warn("Failed to log edit history:", historyError);
@@ -322,7 +376,9 @@ export default function PortfoliosPage() {
 
     try {
       const response = await apiRequest(`${API_ENDPOINTS.PORTFOLIO}?id=${id}`, {
+        username: urlUsername || username || undefined,
         method: "DELETE",
+        username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
       });
 
       if (response.ok) {
@@ -360,7 +416,7 @@ export default function PortfoliosPage() {
           <div className="flex items-center justify-between">
             <div>
               <Link
-                href="/admin"
+                href={username ? `/${username}/admin` : "/admin/login"}
                 className="text-orange-600 hover:text-orange-700 text-sm font-medium inline-flex items-center gap-2 mb-2"
               >
                 <span>←</span>

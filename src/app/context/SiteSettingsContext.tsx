@@ -184,6 +184,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
         const ownerResponse = await apiRequest(API_ENDPOINTS.SETTINGS_USERNAME(ownerParam), {
           method: "GET",
           cache: "no-store",
+          username: ownerParam, // ส่ง username เพื่อให้ใช้ token ที่ถูกต้อง
         });
         if (ownerResponse.ok) {
           data = await ownerResponse.json();
@@ -196,6 +197,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
         const personalResponse = await apiRequest(API_ENDPOINTS.SETTINGS_ME, {
           method: "GET",
           cache: "no-store",
+          username: ownerParam || undefined, // ส่ง username ถ้ามี เพื่อให้ใช้ token ที่ถูกต้อง
         });
 
         if (personalResponse.ok) {
@@ -207,6 +209,7 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
           const fallbackResponse = await apiRequest(API_ENDPOINTS.SETTINGS, {
             method: "GET",
             cache: "no-store",
+            username: ownerParam || undefined, // ส่ง username ถ้ามี เพื่อให้ใช้ token ที่ถูกต้อง
           });
           if (!fallbackResponse.ok) {
             throw new Error(`โหลดการตั้งค่าไม่สำเร็จ (${fallbackResponse.status})`);

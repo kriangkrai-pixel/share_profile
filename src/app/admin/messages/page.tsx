@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
@@ -40,7 +40,14 @@ type FilterType = "all" | "unread" | "read";
 
 export default function MessagesPage() {
   const router = useRouter();
-  useAdminSession();
+  const pathname = usePathname();
+  
+  // ดึง username จาก URL pathname (สำหรับ /[username]/admin/messages)
+  const urlMatch = pathname?.match(/^\/([^/]+)\/admin\/messages/);
+  const urlUsername = urlMatch ? urlMatch[1] : null;
+  
+  // ส่ง username ไปให้ useAdminSession เพื่อใช้ token ที่ถูกต้อง
+  useAdminSession(urlUsername || undefined);
   const [authenticated, setAuthenticated] = useState(false);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [filteredMessages, setFilteredMessages] = useState<ContactMessage[]>([]);
@@ -50,16 +57,27 @@ export default function MessagesPage() {
   const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("adminToken");
+    // ใช้ token ตาม username จาก URL หรือ token เก่า
+    let token: string | null = null;
+    if (urlUsername) {
+      const { getTokenForUser } = require("@/lib/jwt-utils");
+      token = getTokenForUser(urlUsername);
+    }
+    
+    if (!token) {
+      token = localStorage.getItem("adminToken") || localStorage.getItem("authToken");
+    }
+    
     if (!token) {
       router.push("/admin/login");
     } else {
       setAuthenticated(true);
-      const currentUsername = getUsernameFromToken();
+      // ดึง username จาก token ที่ถูกต้อง
+      const currentUsername = getUsernameFromToken(urlUsername || undefined);
       setUsername(currentUsername);
       loadMessages();
     }
-  }, [router]);
+  }, [router, urlUsername]);
 
   /**
    * โหลดข้อความทั้งหมดจาก API
@@ -74,6 +92,7 @@ export default function MessagesPage() {
   const loadMessages = async () => {
     try {
       const response = await apiRequest(API_ENDPOINTS.CONTACT, {
+        username: urlUsername || username || undefined,
         method: "GET",
         cache: "no-store",
       });
@@ -121,6 +140,7 @@ export default function MessagesPage() {
   const handleMarkAsRead = async (id: number, currentStatus: boolean) => {
     try {
       const response = await apiRequest(API_ENDPOINTS.CONTACT, {
+        username: urlUsername || username || undefined,
         method: "PUT",
         body: JSON.stringify({ id, isRead: !currentStatus }),
       });
@@ -225,7 +245,7 @@ export default function MessagesPage() {
           <div className="flex items-center justify-between">
             <div>
               <Link
-                href="/admin"
+                href={username ? `/${username}/admin` : "/admin/login"}
                 className="text-pink-600 hover:text-pink-700 text-sm font-medium inline-flex items-center gap-2 mb-2"
               >
                 <span>←</span>

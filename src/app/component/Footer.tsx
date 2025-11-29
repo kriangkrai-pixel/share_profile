@@ -12,7 +12,8 @@ export default function Footer() {
   const footerTheme = theme.footer;
   const palette = theme.palette;
 
-  if (pathname?.startsWith("/admin")) {
+  // ซ่อน Footer ในหน้า admin ทั้งหมด (รวม /admin และ /[username]/admin)
+  if (pathname?.startsWith("/admin") || pathname?.includes("/admin")) {
     return null;
   }
 
@@ -92,12 +93,6 @@ export default function Footer() {
               <p className="font-medium" aria-label="ที่อยู่">
                 <span className="opacity-70 mr-1">ที่อยู่:</span>
                 <span className="break-words">{settingsLoading ? "กำลังโหลด..." : displayLocation}</span>
-              </p>
-            )}
-            {displayPhone && (
-              <p className="font-medium" aria-label="เบอร์โทร">
-                <span className="opacity-70 mr-1">เบอร์โทร:</span>
-                <span className="break-all">{settingsLoading ? "กำลังโหลด..." : displayPhone}</span>
               </p>
             )}
           </div>

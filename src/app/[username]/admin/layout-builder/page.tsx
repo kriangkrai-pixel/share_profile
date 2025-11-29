@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
-import { getUsernameFromToken, getLoggedInUsers, getTokenForUser } from "@/lib/jwt-utils";
+import { getUsernameFromToken, getTokenForUser } from "@/lib/jwt-utils";
 
 interface WidgetStyle {
   backgroundColor?: string;
@@ -39,8 +39,11 @@ interface Layout {
   widgets: Widget[];
 }
 
-export default function LayoutBuilder() {
+export default function LayoutBuilderPage() {
   const router = useRouter();
+  const params = useParams();
+  const urlUsername = params?.username as string;
+  
   const [layout, setLayout] = useState<Layout | null>(null);
   const [widgets, setWidgets] = useState<Widget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,32 +51,36 @@ export default function LayoutBuilder() {
   const [selectedWidget, setSelectedWidget] = useState<Widget | null>(null);
   const [showStyleEditor, setShowStyleEditor] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
-
+  const [authenticated, setAuthenticated] = useState(false);
+  
   // State สำหรับ Upload รูปภาพ
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // โหลดข้อมูล Layout
+  // ตรวจสอบ authentication และโหลดข้อมูล
   useEffect(() => {
-    // พยายามดึง username จาก token ที่ถูกต้อง
-    // ตรวจสอบจาก loggedInUsers ก่อน
-    const loggedInUsers = getLoggedInUsers();
-    let currentUsername: string | null = null;
-    
-    // ถ้ามี user login อยู่คนเดียว ให้ใช้ user นั้น
-    if (loggedInUsers.length === 1) {
-      currentUsername = getUsernameFromToken(loggedInUsers[0]);
-    } else if (loggedInUsers.length > 1) {
-      // ถ้ามีหลายคน ให้ใช้คนแรก (หรืออาจจะต้องให้ user เลือก)
-      currentUsername = getUsernameFromToken(loggedInUsers[0]);
-    } else {
-      // ถ้าไม่มี loggedInUsers ให้ใช้ token เก่า (backward compatibility)
-      currentUsername = getUsernameFromToken();
+    const checkAuthAndLoad = async () => {
+      // ตรวจสอบ token สำหรับ username นี้โดยเฉพาะ
+      const token = getTokenForUser(urlUsername);
+      if (!token) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      // ดึง username จาก token ที่เฉพาะเจาะจง
+      const loggedInUsername = getUsernameFromToken(urlUsername);
+      if (!loggedInUsername || loggedInUsername.toLowerCase() !== urlUsername.toLowerCase()) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      setAuthenticated(true);
+      await loadLayout(urlUsername);
+    };
+
+    if (urlUsername) {
+      checkAuthAndLoad();
     }
-    
-    setUsername(currentUsername);
-    loadLayout(currentUsername || undefined);
-  }, []);
+  }, [router, urlUsername]);
 
   const buildLayoutUrl = (targetUsername?: string) => {
     const baseUrl = targetUsername
@@ -86,7 +93,7 @@ export default function LayoutBuilder() {
   const loadLayout = async (targetUsername?: string) => {
     try {
       setLoading(true);
-      const usernameToUse = targetUsername ?? username ?? undefined;
+      const usernameToUse = targetUsername ?? urlUsername ?? undefined;
       const response = await apiRequest(buildLayoutUrl(usernameToUse), {
         method: "GET",
         cache: "no-store",
@@ -143,8 +150,8 @@ export default function LayoutBuilder() {
 
       // บันทึก widgets ทั้งหมด
       for (const widget of widgets) {
-        const widgetsEndpoint = username
-          ? API_ENDPOINTS.WIDGETS_USERNAME(username)
+        const widgetsEndpoint = urlUsername
+          ? API_ENDPOINTS.WIDGETS_USERNAME(urlUsername)
           : API_ENDPOINTS.WIDGETS;
         const response = await apiRequest(widgetsEndpoint, {
           method: "PUT",
@@ -157,7 +164,7 @@ export default function LayoutBuilder() {
             isVisible: widget.isVisible,
             settings: widget.settings,
           }),
-          username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
+          username: urlUsername || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
         
         if (!response.ok) {
@@ -175,7 +182,7 @@ export default function LayoutBuilder() {
             section: "layout",
             details: `อัปเดต Layout: ${layout.name}`,
           }),
-          username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
+          username: urlUsername || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
       } catch (error) {
         // Log error but don't block save
@@ -183,7 +190,7 @@ export default function LayoutBuilder() {
       }
 
       showMessage("success", "✅ บันทึกสำเร็จ!");
-      await loadLayout(username ?? undefined); // โหลดใหม่
+      await loadLayout(urlUsername); // โหลดใหม่
     } catch (error) {
       console.error("Error saving:", error);
       showMessage("error", "❌ เกิดข้อผิดพลาดในการบันทึก");
@@ -252,7 +259,7 @@ export default function LayoutBuilder() {
     if (!selectedWidget || !e.target.files || e.target.files.length === 0) return;
 
     const file = e.target.files[0];
-    if (!username) {
+    if (!urlUsername) {
       showMessage("error", "❌ ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง");
       return;
     }
@@ -352,10 +359,10 @@ export default function LayoutBuilder() {
           // สร้าง FormData จาก compressed blob
           const formData = new FormData();
           formData.append("file", compressedBlob, file.name);
-          formData.append("owner", username);
+          formData.append("owner", urlUsername);
 
           // สร้าง URL พร้อม widgetId query parameter
-          const ownerQuery = `owner=${encodeURIComponent(username)}`;
+          const ownerQuery = `owner=${encodeURIComponent(urlUsername)}`;
           const uploadUrl = selectedWidget.id 
             ? `${API_ENDPOINTS.UPLOAD_WIDGET}?widgetId=${selectedWidget.id}&${ownerQuery}`
             : `${API_ENDPOINTS.UPLOAD_WIDGET}?${ownerQuery}`;
@@ -364,7 +371,7 @@ export default function LayoutBuilder() {
           const response = await apiRequest(uploadUrl, {
             method: "POST",
             body: formData,
-            username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
+            username: urlUsername || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
           });
 
           // ตรวจสอบ response และ parse JSON
@@ -517,6 +524,17 @@ export default function LayoutBuilder() {
     }
   };
 
+  if (!authenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 text-lg">กำลังตรวจสอบสิทธิ์...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
@@ -536,7 +554,7 @@ export default function LayoutBuilder() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link
-                href={username ? `/${username}/admin` : "/admin/login"}
+                href={`/${urlUsername}/admin`}
                 className="text-gray-600 hover:text-gray-900 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -555,7 +573,7 @@ export default function LayoutBuilder() {
 
             <div className="flex items-center gap-3">
               <Link
-                href={username ? `/${username}` : "/"}
+                href={`/${urlUsername}`}
                 target="_blank"
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
               >
@@ -1071,4 +1089,3 @@ export default function LayoutBuilder() {
     </div>
   );
 }
-

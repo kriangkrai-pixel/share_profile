@@ -84,7 +84,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+      throw new UnauthorizedException('คุณยังไม่ได้สมัครสมาชิก');
     }
 
     // Verify password
@@ -113,6 +113,64 @@ export class AuthService {
     return {
       success: true,
       message: 'ออกจากระบบสำเร็จ',
+    };
+  }
+
+  /**
+   * ดึงการตั้งค่าของ user
+   */
+  async getUserSettings(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        allowMultipleSessions: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('ไม่พบข้อมูลผู้ใช้');
+    }
+
+    return {
+      success: true,
+      settings: {
+        allowMultipleSessions: user.allowMultipleSessions,
+      },
+    };
+  }
+
+  /**
+   * อัปเดตการตั้งค่าของ user
+   */
+  async updateUserSettings(userId: number, updateDto: { allowMultipleSessions?: boolean }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('ไม่พบข้อมูลผู้ใช้');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        allowMultipleSessions: updateDto.allowMultipleSessions ?? user.allowMultipleSessions,
+      },
+      select: {
+        id: true,
+        username: true,
+        allowMultipleSessions: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'อัปเดตการตั้งค่าสำเร็จ',
+      settings: {
+        allowMultipleSessions: updatedUser.allowMultipleSessions,
+      },
     };
   }
 }

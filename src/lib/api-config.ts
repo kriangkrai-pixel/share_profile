@@ -6,6 +6,9 @@ export const API_ENDPOINTS = {
   LOGIN: `${API_BASE_URL}/auth/login`,
   LOGOUT: `${API_BASE_URL}/auth/logout`,
   
+  // User Settings
+  USER_SETTINGS_ME: `${API_BASE_URL}/auth/user/settings/me`,
+  
   // Content (User-specific)
   CONTENT_ME: `${API_BASE_URL}/content/me`,
   CONTENT_USERNAME: (username: string) => `${API_BASE_URL}/content/${username}`,
@@ -50,14 +53,56 @@ export const API_ENDPOINTS = {
 
 // Helper function to get JWT token from localStorage
 // รองรับทั้ง authToken และ adminToken (adminToken มีความสำคัญกว่า)
-export function getAuthToken(): string | null {
+// และรองรับการเก็บ token แยกตาม username
+export function getAuthToken(username?: string): string | null {
   if (typeof window !== 'undefined') {
-    // ตรวจสอบ adminToken ก่อน (สำหรับ admin pages)
+    // ถ้ามี username ให้ดึง token ที่เฉพาะเจาะจง
+    if (username) {
+      const { getTokenForUser } = require('./jwt-utils');
+      const token = getTokenForUser(username);
+      if (token) {
+        return token;
+      }
+    }
+    
+    // ถ้าไม่มี username ให้ลองหา username จาก token ที่มีอยู่
+    // แล้วใช้ token ของ user นั้น
+    try {
+      const { decodeJWT, getLoggedInUsers } = require('./jwt-utils');
+      
+      // ลองหา username จาก token ที่มีอยู่
+      const fallbackToken = localStorage.getItem('authToken') || localStorage.getItem('adminToken');
+      if (fallbackToken) {
+        const payload = decodeJWT(fallbackToken);
+        if (payload?.username) {
+          // ใช้ token ของ user ที่ decode ได้
+          const { getTokenForUser } = require('./jwt-utils');
+          const userToken = getTokenForUser(payload.username);
+          if (userToken) {
+            return userToken;
+          }
+        }
+      }
+      
+      // ถ้ายังหาไม่เจอ ให้ลองใช้ user ล่าสุดที่ login
+      const loggedInUsers = getLoggedInUsers();
+      if (loggedInUsers.length > 0) {
+        const { getTokenForUser } = require('./jwt-utils');
+        const lastUser = loggedInUsers[loggedInUsers.length - 1];
+        const lastUserToken = getTokenForUser(lastUser);
+        if (lastUserToken) {
+          return lastUserToken;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to get token for username:', error);
+    }
+    
+    // Fallback: ใช้ token แบบเก่า (backward compatibility)
     const adminToken = localStorage.getItem('adminToken');
     if (adminToken) {
       return adminToken;
     }
-    // ถ้าไม่มี adminToken ให้ใช้ authToken (สำหรับ public pages)
     return localStorage.getItem('authToken');
   }
   return null;
@@ -88,10 +133,81 @@ export function isConnectionError(error: any): boolean {
   );
 }
 
+/**
+ * ดึง username จาก pathname ปัจจุบัน
+ */
+function getUsernameFromPathname(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  
+  const pathname = window.location.pathname;
+  // ตรวจสอบว่า pathname เป็น /[username]/admin/... หรือไม่
+  const match = pathname.match(/^\/([^/]+)\/admin/);
+  if (match && match[1]) {
+    const username = match[1];
+    // ตรวจสอบว่าไม่ใช่ reserved paths
+    const reserved = ['admin', 'register', 'login', 'api', '_next'];
+    if (!reserved.includes(username.toLowerCase())) {
+      return username;
+    }
+  }
+  
+  return null;
+}
+
 // Helper function for making API calls with credentials and JWT token
 // Includes automatic retry logic for 429 (Rate Limit) errors
-export async function apiRequest(url: string, options?: RequestInit & { retryOn429?: boolean; maxRetries?: number }) {
-  const token = getAuthToken();
+export async function apiRequest(
+  url: string, 
+  options?: RequestInit & { 
+    retryOn429?: boolean; 
+    maxRetries?: number;
+    username?: string; // เพิ่ม username parameter
+  }
+) {
+  // ถ้าไม่มี username ใน options ให้ลองดึงจาก pathname หรือจาก token
+  let username = options?.username;
+  if (!username) {
+    username = getUsernameFromPathname();
+    
+    // ถ้ายังหา username ไม่เจอจาก pathname ให้ลองดึงจาก token
+    if (!username) {
+      try {
+        // ลองหา token ที่มีอยู่และ decode username
+        const { decodeJWT } = require('./jwt-utils');
+        const fallbackToken = localStorage.getItem('authToken') || localStorage.getItem('adminToken');
+        if (fallbackToken) {
+          const payload = decodeJWT(fallbackToken);
+          if (payload?.username) {
+            username = payload.username;
+          }
+        }
+        
+        // ถ้ายังไม่เจอ ให้ลองใช้ user ล่าสุดที่ login
+        if (!username) {
+          const { getLoggedInUsers } = require('./jwt-utils');
+          const loggedInUsers = getLoggedInUsers();
+          if (loggedInUsers.length > 0) {
+            // ใช้ user ล่าสุดที่ login (ตัวสุดท้ายใน array)
+            username = loggedInUsers[loggedInUsers.length - 1];
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to get username from token:', error);
+      }
+    }
+  }
+  
+  // ถ้ามี username ให้ใช้ token ของ user นั้นโดยตรง (ไม่ใช้ fallback)
+  let token: string | null = null;
+  if (username) {
+    const { getTokenForUser } = require('./jwt-utils');
+    token = getTokenForUser(username);
+  } else {
+    // ถ้าไม่มี username ให้ใช้ getAuthToken ที่มี fallback logic
+    token = getAuthToken();
+  }
   const method = options?.method || 'GET';
   const retryOn429 = options?.retryOn429 !== false; // Default to true
   const maxRetries = options?.maxRetries ?? 3;

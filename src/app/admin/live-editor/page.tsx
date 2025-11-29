@@ -36,11 +36,18 @@ interface SectionOrder {
 
 export default function LiveEditorPage() {
   const router = useRouter();
-  useAdminSession();
+  const pathname = usePathname();
+  
+  // ดึง username จาก URL pathname (สำหรับ /[username]/admin/live-editor)
+  const urlMatch = pathname?.match(/^\/([^/]+)\/admin\/live-editor/);
+  const urlUsername = urlMatch ? urlMatch[1] : null;
+  
+  useAdminSession(urlUsername || undefined);
   const { profile, updateProfile, refreshProfile } = useProfile();
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
   
   // Current tab
   const [activeTab, setActiveTab] = useState<"hero" | "about" | "skills" | "education" | "portfolio" | "contact">("hero");
@@ -265,7 +272,7 @@ export default function LiveEditorPage() {
           <div className="flex items-center justify-between">
             <div>
               <Link
-                href="/admin"
+                href={username ? `/${username}/admin` : "/admin/login"}
                 className="text-blue-600 hover:text-blue-700 text-sm font-medium inline-flex items-center gap-2 mb-2"
               >
                 <span>←</span>
@@ -496,7 +503,7 @@ export default function LiveEditorPage() {
                   แก้ไขข้อมูลการศึกษาและประสบการณ์
                 </p>
                 <Link
-                  href="/admin/education-experience"
+                  href={username ? `/${username}/admin/education-experience` : "/admin/login"}
                   className="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition-all"
                 >
                   ไปที่หน้าจัดการการศึกษา →
@@ -512,7 +519,7 @@ export default function LiveEditorPage() {
                   จัดการผลงานของคุณ
                 </p>
                 <Link
-                  href="/admin/portfolios"
+                  href={username ? `/${username}/admin/portfolios` : "/admin/login"}
                   className="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition-all"
                 >
                   ไปที่หน้าจัดการผลงาน →

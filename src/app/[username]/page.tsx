@@ -107,15 +107,15 @@ export default function UserProfilePage() {
   const params = useParams();
   const router = useRouter();
   const username = params?.username as string;
-  
+
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [layout, setLayout] = useState<Layout | null>(null);
   const [loadingLayout, setLoadingLayout] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // State สำหรับ Theme Settings
   const [theme, setTheme] = useState<ThemeSettings>(DEFAULT_THEME_SETTINGS);
-  
+
   // State สำหรับฟอร์มติดต่อ
   const [contactForm, setContactForm] = useState({
     name: "",
@@ -123,7 +123,15 @@ export default function UserProfilePage() {
     message: "",
   });
   const [submitting, setSubmitting] = useState(false);
-  
+  // เพิ่ม state สำหรับ errors
+  const [contactFormErrors, setContactFormErrors] = useState<{
+    name?: string;
+    email?: string;
+    message?: string;
+    general?: string;
+    success?: string;
+  }>({});
+
   // State สำหรับ showAll ของ Portfolio (แยกตาม widget id)
   const [portfolioShowAll, setPortfolioShowAll] = useState<Record<number, boolean>>({});
 
@@ -135,7 +143,7 @@ export default function UserProfilePage() {
   const transformUserContent = useCallback((data: any): ProfileData => {
     // รองรับทั้งโครงสร้างใหม่ (array) และเก่า (object) เพื่อ backward compatibility
     let education: Education[] = [];
-    
+
     if (Array.isArray(data.education)) {
       // โครงสร้างใหม่ - array
       education = data.education.map((edu: any) => ({
@@ -172,7 +180,7 @@ export default function UserProfilePage() {
         });
       }
     }
-    
+
     return {
       name: data.name || "",
       email: data.email || "",
@@ -226,7 +234,7 @@ export default function UserProfilePage() {
           bio: data?.bio ? `${data.bio.substring(0, 50)}...` : "empty",
           skillsCount: data?.skills?.length || 0,
         });
-        
+
         if (!data || data.error) {
           console.error("❌ Invalid user content data:", data);
           setError("ไม่พบข้อมูลผู้ใช้");
@@ -290,17 +298,17 @@ export default function UserProfilePage() {
         credentials: "include",
         cache: "no-store",
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");
         console.error(`❌ Failed to load layout: ${response.status} ${response.statusText}`, errorText);
         setLayout(null);
         return;
       }
-      
+
       const data = await response.json();
       console.log("✅ Layout loaded:", data);
-      
+
       if (data && !data.error && data.widgets) {
         setLayout(data);
       } else {
@@ -443,22 +451,60 @@ export default function UserProfilePage() {
     return () => window.removeEventListener("focus", handleFocus);
   }, [handleFocus]);
 
+  // เพิ่ม validation functions
+  const validateName = (value: string): string | undefined => {
+    if (!value.trim()) {
+      return "กรุณากรอกชื่อ";
+    }
+    if (value.trim().length < 2) {
+      return "ชื่อต้องมีอย่างน้อย 2 ตัวอักษร";
+    }
+    return undefined;
+  };
+
+  const validateEmail = (value: string): string | undefined => {
+    if (!value.trim()) {
+      return "กรุณากรอกอีเมล";
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value)) {
+      return "รูปแบบอีเมลไม่ถูกต้อง";
+    }
+    return undefined;
+  };
+
+  const validateMessage = (value: string): string | undefined => {
+    if (!value.trim()) {
+      return "กรุณากรอกข้อความ";
+    }
+    if (value.trim().length < 10) {
+      return "ข้อความต้องมีความยาวอย่างน้อย 10 ตัวอักษร";
+    }
+    return undefined;
+  };
+
   // ฟังก์ชันส่งข้อความติดต่อ
   const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!contactForm.name || !contactForm.email || !contactForm.message) {
-      alert("กรุณากรอกข้อมูลให้ครบถ้วน");
-      return;
-    }
 
-    if (!username) {
-      alert("ไม่พบเจ้าของโปรไฟล์ กรุณาตรวจสอบ URL อีกครั้ง");
+    // Validate all fields
+    const nameError = validateName(contactForm.name);
+    const emailError = validateEmail(contactForm.email);
+    const messageError = validateMessage(contactForm.message);
+
+    setContactFormErrors({
+      name: nameError,
+      email: emailError,
+      message: messageError,
+    });
+
+    // ถ้ามี error ให้หยุดการส่ง
+    if (nameError || emailError || messageError) {
       return;
     }
 
     setSubmitting(true);
-    
+
     try {
       const response = await apiRequest(API_ENDPOINTS.CONTACT, {
         method: "POST",
@@ -471,28 +517,59 @@ export default function UserProfilePage() {
       });
 
       if (response.ok) {
-        alert("✅ ส่งข้อความสำเร็จ! เราจะตอบกลับโดยเร็วที่สุด");
+        // แสดงข้อความสำเร็จด้านล่างฟอร์มแทน alert
+        setContactFormErrors({
+          success: "✅ ส่งข้อความสำเร็จ! เราจะตอบกลับโดยเร็วที่สุด"
+        });
         setContactForm({ name: "", email: "", message: "" });
+        // Clear success message after 5 seconds
+        setTimeout(() => {
+          setContactFormErrors({});
+        }, 5000);
       } else {
-        let errorMessage = "❌ เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
+        let errorMessages: { name?: string; email?: string; message?: string } = {};
         try {
           const errorData = await response.json();
           if (errorData.message && Array.isArray(errorData.message)) {
-            errorMessage = errorData.message.join('\n');
+            // ถ้าเป็น array ของ error messages
+            errorData.message.forEach((msg: string) => {
+              if (msg.includes('ชื่อ')) {
+                errorMessages.name = msg;
+              } else if (msg.includes('อีเมล') || msg.includes('email')) {
+                errorMessages.email = msg;
+              } else if (msg.includes('ข้อความ') || msg.includes('message')) {
+                errorMessages.message = msg;
+              }
+            });
           } else if (errorData.message) {
-            errorMessage = errorData.message;
+            // ถ้าเป็น string เดียว
+            if (errorData.message.includes('ชื่อ')) {
+              errorMessages.name = errorData.message;
+            } else if (errorData.message.includes('อีเมล') || errorData.message.includes('email')) {
+              errorMessages.email = errorData.message;
+            } else if (errorData.message.includes('ข้อความ') || errorData.message.includes('message')) {
+              errorMessages.message = errorData.message;
+            } else {
+              // ถ้าไม่สามารถระบุได้ ให้แสดงด้านล่างฟอร์ม
+              setContactFormErrors({ general: errorData.message });
+            }
           }
         } catch (parseError) {
           console.error("Error parsing error response:", parseError);
+          setContactFormErrors({ general: "❌ เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง" });
         }
-        alert(errorMessage);
+        
+        // แสดง error ในฟอร์ม
+        if (Object.keys(errorMessages).length > 0) {
+          setContactFormErrors({ ...contactFormErrors, ...errorMessages });
+        }
       }
     } catch (error) {
       console.error("Error sending message:", error);
       if (isConnectionError(error)) {
-        alert("❌ ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตและลองใหม่อีกครั้ง");
+        setContactFormErrors({ general: "❌ ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตและลองใหม่อีกครั้ง" });
       } else {
-        alert("❌ เกิดข้อผิดพลาดในการส่งข้อความ กรุณาลองใหม่อีกครั้ง");
+        setContactFormErrors({ general: "❌ เกิดข้อผิดพลาดในการส่งข้อความ กรุณาลองใหม่อีกครั้ง" });
       }
     } finally {
       setSubmitting(false);
@@ -516,32 +593,32 @@ export default function UserProfilePage() {
   // ฟังก์ชันดึง Style จาก Widget settings (memoized)
   const getWidgetStyle = useCallback((widget: Widget): WidgetStyle => {
     if (!widget.settings) return {};
-    
+
     try {
       const cleaned = widget.settings
         .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
         .trim();
-      
+
       if (!cleaned) {
         return {};
       }
-      
+
       if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
         console.warn(`Widget ${widget.id} has invalid JSON format (must start with { or [):`, widget.settings.substring(0, 50));
         return {};
       }
-      
+
       let fixedJson = cleaned
         .replace(/'/g, '"')
         .replace(/(\w+):/g, '"$1":');
-      
+
       const parsed = JSON.parse(fixedJson);
-      
+
       if (typeof parsed !== 'object' || parsed === null) {
         console.warn(`Widget ${widget.id} settings is not an object:`, typeof parsed);
         return {};
       }
-      
+
       return parsed as WidgetStyle;
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
@@ -566,27 +643,27 @@ export default function UserProfilePage() {
 
   const renderHeroSection = useCallback((widget: Widget) => {
     if (!profile) return null;
-    
+
     const style = getWidgetStyle(widget);
     const bgColor = style.backgroundColor || `linear-gradient(to bottom right, ${theme.backgroundColor}, ${theme.primaryColor}15, ${theme.secondaryColor}15)`;
-    
+
     // อ่านข้อมูลจาก widget settings
     let welcomeMessage = "ยินดีต้อนรับ";
     let portfolioButtonText = "ดูผลงาน";
     let contactButtonText = "ติดต่อฉัน";
-    
+
     if (widget.settings) {
       try {
         const cleaned = widget.settings
           .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
           .trim();
-        
+
         if (cleaned && (cleaned.startsWith('{') || cleaned.startsWith('['))) {
           let fixedJson = cleaned
             .replace(/'/g, '"')
             .replace(/(\w+):/g, '"$1":');
           const parsed = JSON.parse(fixedJson);
-          
+
           if (typeof parsed === 'object' && parsed !== null) {
             welcomeMessage = parsed.welcomeMessage || welcomeMessage;
             portfolioButtonText = parsed.portfolioButtonText || portfolioButtonText;
@@ -598,20 +675,20 @@ export default function UserProfilePage() {
         console.debug("Error parsing hero widget settings, using defaults");
       }
     }
-    
+
     return (
-      <section 
-        key={widget.id} 
+      <section
+        key={widget.id}
         id="hero"
         className="relative flex items-center justify-center px-6 md:px-20 py-16 md:py-24 overflow-hidden"
-        style={{ 
+        style={{
           background: bgColor,
-          color: style.textColor || theme.textColor 
+          color: style.textColor || theme.textColor
         }}
       >
         <div className="absolute top-0 right-0 w-96 h-96 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse" style={{ backgroundColor: theme.primaryColor }}></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse delay-1000" style={{ backgroundColor: theme.secondaryColor }}></div>
-        
+
         <div className="flex flex-col md:flex-row items-center justify-between w-full max-w-6xl gap-10 relative z-10">
           <div className="text-center md:text-left animate-fade-in-up">
             <div className="inline-block mb-4">
@@ -648,7 +725,7 @@ export default function UserProfilePage() {
             <div className="relative">
               <div className="absolute inset-0 rounded-full border-4 animate-ping opacity-20" style={{ borderColor: theme.primaryColor }}></div>
               <div className="absolute -inset-4 rounded-full border-2 animate-pulse" style={{ borderColor: theme.secondaryColor }}></div>
-              
+
               <Image
                 src={widget.imageUrl || profile.heroImage || "/img.png"}
                 alt="Profile Picture"
@@ -667,14 +744,14 @@ export default function UserProfilePage() {
 
   const renderAboutSection = useCallback((widget: Widget) => {
     if (!profile) return null;
-    
+
     const style = getWidgetStyle(widget);
     const bgColor = style.backgroundColor || `linear-gradient(to bottom right, #f9fafb, ${theme.primaryColor}10)`;
-    
+
     return (
-      <section 
-        key={widget.id} 
-        id="about" 
+      <section
+        key={widget.id}
+        id="about"
         className="px-6 md:px-20 py-12"
         style={{ background: bgColor }}
       >
@@ -721,12 +798,12 @@ export default function UserProfilePage() {
 
   const renderSkillsSection = useCallback((widget: Widget) => {
     if (!profile) return null;
-    
+
     const style = getWidgetStyle(widget);
-    
+
     return (
-      <section 
-        key={widget.id} 
+      <section
+        key={widget.id}
         id="skills"
         className="px-6 md:px-20 py-12"
         style={{ backgroundColor: style.backgroundColor || theme.backgroundColor }}
@@ -739,8 +816,8 @@ export default function UserProfilePage() {
           <div className="gradient-primary/10 p-8 rounded-2xl shadow-xl border-2 border-primary/20">
             <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {profile.skills.map((skill, index) => (
-                <li 
-                  key={index} 
+                <li
+                  key={index}
                   className="flex items-center gap-3 p-3 rounded-lg bg-white hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
@@ -759,14 +836,14 @@ export default function UserProfilePage() {
 
   const renderEducationSection = useCallback((widget: Widget) => {
     if (!profile) return null;
-    
+
     const style = getWidgetStyle(widget);
     const bgColor = style.backgroundColor || `linear-gradient(to bottom right, #f9fafb, ${theme.secondaryColor}10)`;
-    
+
     return (
-      <section 
-        key={widget.id} 
-        id="education-experience" 
+      <section
+        key={widget.id}
+        id="education-experience"
         className="px-6 md:px-20 py-12"
         style={{ background: bgColor }}
       >
@@ -775,7 +852,7 @@ export default function UserProfilePage() {
             <span className="text-3xl">🎓</span>
             {widget.title || "ประวัติการศึกษาและประสบการณ์"}
           </h2>
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div>
               <h3 className="text-xl font-semibold mb-6 text-primary flex items-center">
@@ -784,7 +861,7 @@ export default function UserProfilePage() {
                 </svg>
                 การศึกษา
               </h3>
-              
+
               <div className="space-y-6">
                 {profile.education.length > 0 ? (
                   profile.education.map((edu, index) => {
@@ -809,20 +886,20 @@ export default function UserProfilePage() {
                         default: return type;
                       }
                     };
-                    
+
                     return (
-                      <div 
+                      <div
                         key={edu.id || index}
-                        className="bg-white p-6 rounded-xl shadow-md border-2 hover:shadow-xl transition-all duration-300 hover:-translate-y-1" 
+                        className="bg-white p-6 rounded-xl shadow-md border-2 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
                         style={{ borderColor: isGraduated ? theme.accentColor : theme.primaryColor }}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-xl">{getTypeIcon(edu.type)}</span>
-                              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ 
+                              <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{
                                 backgroundColor: `${theme.primaryColor}15`,
-                                color: theme.primaryColor 
+                                color: theme.primaryColor
                               }}>
                                 {getTypeLabel(edu.type)}
                               </span>
@@ -842,7 +919,7 @@ export default function UserProfilePage() {
                                 GPA {edu.gpa}
                               </span>
                             ) : edu.year ? (
-                              <span className="text-white text-sm font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap" style={{ 
+                              <span className="text-white text-sm font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap" style={{
                                 background: `linear-gradient(to right, ${theme.primaryColor}, ${theme.secondaryColor})`
                               }}>
                                 {edu.year}
@@ -882,17 +959,17 @@ export default function UserProfilePage() {
                 </svg>
                 ประสบการณ์ทำงาน / ฝึกงาน
               </h3>
-              
+
               <div className="space-y-4">
                 {profile.experience.length > 0 ? (
                   profile.experience.map((exp, index) => (
-                    <div 
-                      key={exp.id} 
+                    <div
+                      key={exp.id}
                       className="bg-white p-6 rounded-xl shadow-md border-2 border-l-4 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
-                      style={{ 
+                      style={{
                         borderColor: `${theme.secondaryColor}20`,
                         borderLeftColor: theme.secondaryColor,
-                        animationDelay: `${index * 100}ms` 
+                        animationDelay: `${index * 100}ms`
                       }}
                     >
                       <div className="flex items-start justify-between mb-2">
@@ -931,15 +1008,15 @@ export default function UserProfilePage() {
 
   const renderPortfolioSection = useCallback((widget: Widget) => {
     if (!profile) return null;
-    
+
     const style = getWidgetStyle(widget);
     const showAll = portfolioShowAll[widget.id] || false;
     const displayCount = showAll ? profile.portfolio.length : 6;
-    
+
     return (
-      <section 
-        key={widget.id} 
-        id="portfolio" 
+      <section
+        key={widget.id}
+        id="portfolio"
         className="px-6 md:px-20 py-12"
         style={{ backgroundColor: style.backgroundColor || theme.backgroundColor }}
       >
@@ -949,14 +1026,14 @@ export default function UserProfilePage() {
               <span className="text-3xl">💼</span>
               {widget.title || "ผลงาน"}
             </h2>
-            <span className="text-sm font-medium px-4 py-2 rounded-full" style={{ 
+            <span className="text-sm font-medium px-4 py-2 rounded-full" style={{
               backgroundColor: `${theme.primaryColor}15`,
-              color: theme.primaryColor 
+              color: theme.primaryColor
             }}>
               {profile.portfolio.length} โปรเจค
             </span>
           </div>
-          
+
           {profile.portfolio.length === 0 ? (
             <div className="text-center py-16">
               <p className="text-4xl mb-4">📁</p>
@@ -966,20 +1043,20 @@ export default function UserProfilePage() {
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {profile.portfolio.slice(0, displayCount).map((item, index) => (
-                  <div 
-                    key={item.id} 
+                  <div
+                    key={item.id}
                     className="group relative rounded-xl border-2 bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 overflow-hidden"
-                    style={{ 
+                    style={{
                       borderColor: '#e5e7eb',
-                      animationDelay: `${index * 100}ms` 
+                      animationDelay: `${index * 100}ms`
                     }}
                   >
                     <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ background: `linear-gradient(to bottom right, ${theme.primaryColor}05, ${theme.secondaryColor}05)` }}></div>
-                    
+
                     {item.image && (
                       <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
-                        <img 
-                          src={item.image} 
+                        <img
+                          src={item.image}
                           alt={item.title}
                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                         />
@@ -988,7 +1065,7 @@ export default function UserProfilePage() {
                         </div>
                       </div>
                     )}
-                    
+
                     <div className="relative z-10 p-6">
                       {!item.image && (
                         <div className="flex items-start justify-between mb-3">
@@ -997,14 +1074,14 @@ export default function UserProfilePage() {
                           </div>
                         </div>
                       )}
-                      
+
                       <h3 className="font-bold mb-3 text-lg group-hover:text-primary transition-colors" style={{ color: theme.textColor }}>
                         {item.title}
                       </h3>
                       <p className="text-sm leading-relaxed mb-4 line-clamp-3" style={{ color: theme.textColor }}>
                         {item.description}
                       </p>
-                      
+
                       <div className="flex items-center gap-3">
                         <Link
                           href={`/portfolio/${item.id}?username=${username}`}
@@ -1016,10 +1093,10 @@ export default function UserProfilePage() {
                         {item.link && (
                           <>
                             <span className="text-gray-300">|</span>
-                            <a 
-                              href={item.link} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
+                            <a
+                              href={item.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="inline-flex items-center gap-2 font-semibold text-sm group/link text-primary"
                             >
                               <span>ดูโปรเจค</span>
@@ -1032,14 +1109,14 @@ export default function UserProfilePage() {
                   </div>
                 ))}
               </div>
-              
+
               {profile.portfolio.length > 6 && (
                 <div className="mt-8 text-center">
                   <button
                     onClick={() => setPortfolioShowAll(prev => ({ ...prev, [widget.id]: !showAll }))}
                     className="px-8 py-3 rounded-full font-semibold text-white shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1"
-                    style={{ 
-                      background: `linear-gradient(to right, ${theme.primaryColor}, ${theme.secondaryColor})` 
+                    style={{
+                      background: `linear-gradient(to right, ${theme.primaryColor}, ${theme.secondaryColor})`
                     }}
                   >
                     {showAll ? (
@@ -1065,14 +1142,14 @@ export default function UserProfilePage() {
 
   const renderContactSection = useCallback((widget: Widget) => {
     if (!profile) return null;
-    
+
     const style = getWidgetStyle(widget);
     const bgColor = style.backgroundColor || `linear-gradient(to bottom right, #f9fafb, ${theme.primaryColor}10)`;
-    
+
     return (
-      <section 
-        key={widget.id} 
-        id="contact" 
+      <section
+        key={widget.id}
+        id="contact"
         className="px-6 md:px-20 py-12"
         style={{ background: bgColor }}
       >
@@ -1081,7 +1158,7 @@ export default function UserProfilePage() {
             <span className="text-3xl">📧</span>
             ติดต่อ
           </h2>
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div>
               <div className="rounded-2xl border-2 bg-white p-8 shadow-xl h-full flex flex-col hover:shadow-2xl transition-all duration-300" style={{ borderColor: theme.primaryColor }}>
@@ -1101,7 +1178,7 @@ export default function UserProfilePage() {
                   <h3 className="mt-4 text-2xl font-bold" style={{ color: theme.textColor }}>{profile.name}</h3>
                   <p className="mt-2 text-sm" style={{ color: theme.textColor }}>{profile.description}</p>
                 </div>
-                
+
                 <div className="mt-4 space-y-4 flex-grow">
                   <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-primary/5 transition-colors group">
                     <span className="text-2xl">📧</span>
@@ -1155,95 +1232,173 @@ export default function UserProfilePage() {
                     <label htmlFor="name" className="block text-sm font-semibold mb-2" style={{ color: theme.textColor }}>
                       ชื่อ <span className="text-red-500">*</span>
                     </label>
-                    <input 
-                      id="name" 
-                      name="name" 
-                      type="text" 
-                      required 
+                    <input
+                      id="name"
+                      name="name"
+                      type="text"
                       value={contactForm.name}
-                      onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                      placeholder="กรอกชื่อของคุณ" 
-                      className="w-full rounded-xl border-2 bg-white px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all"
-                      style={{ 
-                        borderColor: '#d1d5db',
-                        color: theme.textColor 
+                      onChange={(e) => {
+                        setContactForm({ ...contactForm, name: e.target.value });
+                        // Clear error when user types
+                        if (contactFormErrors.name) {
+                          setContactFormErrors({ ...contactFormErrors, name: undefined });
+                        }
+                      }}
+                      placeholder="กรอกชื่อของคุณ"
+                      className={`w-full rounded-xl border-2 bg-white px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                        contactFormErrors.name
+                          ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                          : "border-gray-300 focus:border-primary focus:ring-primary/20"
+                      }`}
+                      style={{
+                        borderColor: contactFormErrors.name ? '#ef4444' : '#d1d5db',
+                        color: theme.textColor
                       }}
                       onFocus={(e) => {
-                        e.target.style.borderColor = theme.primaryColor;
-                        e.target.style.boxShadow = `0 0 0 3px ${theme.primaryColor}20`;
+                        e.target.style.borderColor = contactFormErrors.name ? '#ef4444' : theme.primaryColor;
+                        e.target.style.boxShadow = contactFormErrors.name 
+                          ? `0 0 0 3px rgba(239, 68, 68, 0.2)`
+                          : `0 0 0 3px ${theme.primaryColor}20`;
                       }}
                       onBlur={(e) => {
-                        e.target.style.borderColor = '#d1d5db';
+                        e.target.style.borderColor = contactFormErrors.name ? '#ef4444' : '#d1d5db';
                         e.target.style.boxShadow = 'none';
+                        setContactFormErrors({ ...contactFormErrors, name: validateName(contactForm.name) });
                       }}
                     />
+                    {contactFormErrors.name && (
+                      <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                        <span>⚠️</span>
+                        <span>{contactFormErrors.name}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="md:col-span-1">
                     <label htmlFor="email" className="block text-sm font-semibold mb-2" style={{ color: theme.textColor }}>
                       อีเมล <span className="text-red-500">*</span>
                     </label>
-                    <input 
-                      id="email" 
-                      name="email" 
-                      type="email" 
-                      required 
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
                       value={contactForm.email}
-                      onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                      placeholder="example@mail.com" 
-                      className="w-full rounded-xl border-2 bg-white px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all"
-                      style={{ 
-                        borderColor: '#d1d5db',
-                        color: theme.textColor 
+                      onChange={(e) => {
+                        setContactForm({ ...contactForm, email: e.target.value });
+                        if (contactFormErrors.email) {
+                          setContactFormErrors({ ...contactFormErrors, email: undefined });
+                        }
+                      }}
+                      placeholder="example@mail.com"
+                      className={`w-full rounded-xl border-2 bg-white px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all ${
+                        contactFormErrors.email
+                          ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                          : "border-gray-300 focus:border-primary focus:ring-primary/20"
+                      }`}
+                      style={{
+                        borderColor: contactFormErrors.email ? '#ef4444' : '#d1d5db',
+                        color: theme.textColor
                       }}
                       onFocus={(e) => {
-                        e.target.style.borderColor = theme.primaryColor;
-                        e.target.style.boxShadow = `0 0 0 3px ${theme.primaryColor}20`;
+                        e.target.style.borderColor = contactFormErrors.email ? '#ef4444' : theme.primaryColor;
+                        e.target.style.boxShadow = contactFormErrors.email 
+                          ? `0 0 0 3px rgba(239, 68, 68, 0.2)`
+                          : `0 0 0 3px ${theme.primaryColor}20`;
                       }}
                       onBlur={(e) => {
-                        e.target.style.borderColor = '#d1d5db';
+                        e.target.style.borderColor = contactFormErrors.email ? '#ef4444' : '#d1d5db';
                         e.target.style.boxShadow = 'none';
+                        setContactFormErrors({ ...contactFormErrors, email: validateEmail(contactForm.email) });
                       }}
                     />
+                    {contactFormErrors.email && (
+                      <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                        <span>⚠️</span>
+                        <span>{contactFormErrors.email}</span>
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      ตัวอย่าง: user@example.com
+                    </p>
                   </div>
                   <div className="md:col-span-2">
                     <label htmlFor="message" className="block text-sm font-semibold mb-2" style={{ color: theme.textColor }}>
                       ข้อความ <span className="text-red-500">*</span>
                     </label>
-                    <textarea 
-                      id="message" 
-                      name="message" 
-                      required 
-                      rows={5} 
+                    <textarea
+                      id="message"
+                      name="message"
+                      rows={5}
                       value={contactForm.message}
-                      onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-                      placeholder="พิมพ์ข้อความของคุณที่นี่..." 
-                      className="w-full rounded-xl border-2 bg-white px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all resize-none"
-                      style={{ 
-                        borderColor: '#d1d5db',
-                        color: theme.textColor 
+                      onChange={(e) => {
+                        setContactForm({ ...contactForm, message: e.target.value });
+                        if (contactFormErrors.message) {
+                          setContactFormErrors({ ...contactFormErrors, message: undefined });
+                        }
+                      }}
+                      placeholder="พิมพ์ข้อความของคุณที่นี่..."
+                      className={`w-full rounded-xl border-2 bg-white px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 transition-all resize-none ${
+                        contactFormErrors.message
+                          ? "border-red-300 focus:border-red-500 focus:ring-red-200"
+                          : "border-gray-300 focus:border-primary focus:ring-primary/20"
+                      }`}
+                      style={{
+                        borderColor: contactFormErrors.message ? '#ef4444' : '#d1d5db',
+                        color: theme.textColor
                       }}
                       onFocus={(e) => {
-                        e.target.style.borderColor = theme.primaryColor;
-                        e.target.style.boxShadow = `0 0 0 3px ${theme.primaryColor}20`;
+                        e.target.style.borderColor = contactFormErrors.message ? '#ef4444' : theme.primaryColor;
+                        e.target.style.boxShadow = contactFormErrors.message 
+                          ? `0 0 0 3px rgba(239, 68, 68, 0.2)`
+                          : `0 0 0 3px ${theme.primaryColor}20`;
                       }}
                       onBlur={(e) => {
-                        e.target.style.borderColor = '#d1d5db';
+                        e.target.style.borderColor = contactFormErrors.message ? '#ef4444' : '#d1d5db';
                         e.target.style.boxShadow = 'none';
+                        setContactFormErrors({ ...contactFormErrors, message: validateMessage(contactForm.message) });
                       }}
                     />
+                    {contactFormErrors.message && (
+                      <p className="mt-2 text-sm text-red-600 flex items-center gap-1">
+                        <span>⚠️</span>
+                        <span>{contactFormErrors.message}</span>
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      ข้อความต้องมีความยาวอย่างน้อย 10 ตัวอักษร
+                    </p>
                   </div>
                   <div className="md:col-span-2">
                     <div className="flex items-center gap-2 mb-4">
                       <span className="text-sm text-gray-500">🔒 เราจะเก็บข้อมูลของคุณไว้อย่างปลอดภัย</span>
                     </div>
-                    <button 
-                      type="submit" 
+                    <button
+                      type="submit"
                       disabled={submitting}
                       className="btn-primary w-full py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <span>{submitting ? "กำลังส่ง..." : "ส่งข้อความ"}</span>
                       {!submitting && <span className="transform group-hover:translate-x-1 transition-transform">📨</span>}
                     </button>
+                    
+                    {/* แสดง success message */}
+                    {contactFormErrors.success && (
+                      <div className="mt-4 p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+                        <p className="text-sm text-green-700 flex items-center gap-2">
+                          <span>✅</span>
+                          <span>{contactFormErrors.success}</span>
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* แสดง general error message */}
+                    {contactFormErrors.general && (
+                      <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
+                        <p className="text-sm text-red-700 flex items-center gap-2">
+                          <span>⚠️</span>
+                          <span>{contactFormErrors.general}</span>
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </form>
               </div>
@@ -1252,7 +1407,7 @@ export default function UserProfilePage() {
         </div>
       </section>
     );
-  }, [profile, theme, contactForm, submitting, getWidgetStyle]);
+  }, [profile, theme, contactForm, submitting, getWidgetStyle, contactFormErrors]);
 
   const renderImageWidget = useCallback((widget: Widget) => {
     const style = getWidgetStyle(widget);
@@ -1400,19 +1555,7 @@ export default function UserProfilePage() {
       .sort((a, b) => a.order - b.order);
   }, [layout?.widgets]);
 
-  // Loading state
-  if (loadingLayout || !profile) {
-    return (
-      <main className="min-h-screen flex items-center justify-center" style={{ backgroundColor: theme.backgroundColor }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto" style={{ borderColor: theme.primaryColor }}></div>
-          <p className="mt-4" style={{ color: theme.textColor }}>กำลังโหลด...</p>
-        </div>
-      </main>
-    );
-  }
-
-  // Error state
+  // Error state - ตรวจสอบก่อน loading state เพื่อแสดง error ทันที
   if (error) {
     return (
       <main className="min-h-screen flex items-center justify-center" style={{ backgroundColor: theme.backgroundColor }}>
@@ -1423,7 +1566,7 @@ export default function UserProfilePage() {
           <Link
             href="/"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl hover:opacity-90 transition-opacity"
-            style={{ 
+            style={{
               backgroundColor: theme.primaryColor,
               color: '#ffffff'
             }}
@@ -1431,6 +1574,18 @@ export default function UserProfilePage() {
             <span>←</span>
             <span>กลับไปหน้าแรก</span>
           </Link>
+        </div>
+      </main>
+    );
+  }
+
+  // Loading state
+  if (loadingLayout || !profile) {
+    return (
+      <main className="min-h-screen flex items-center justify-center" style={{ backgroundColor: theme.backgroundColor }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto" style={{ borderColor: theme.primaryColor }}></div>
+          <p className="mt-4" style={{ color: theme.textColor }}>กำลังโหลด...</p>
         </div>
       </main>
     );
@@ -1501,14 +1656,14 @@ export default function UserProfilePage() {
               <span className="text-3xl">💼</span>
               ผลงาน
             </h2>
-            <span className="text-sm font-medium px-4 py-2 rounded-full" style={{ 
+            <span className="text-sm font-medium px-4 py-2 rounded-full" style={{
               backgroundColor: `${theme.primaryColor}15`,
-              color: theme.primaryColor 
+              color: theme.primaryColor
             }}>
               {profile.portfolio.length} โปรเจค
             </span>
           </div>
-          
+
           {profile.portfolio.length === 0 ? (
             <div className="text-center py-16">
               <p className="text-4xl mb-4">📁</p>
@@ -1517,20 +1672,20 @@ export default function UserProfilePage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {profile.portfolio.map((item, index) => (
-                <div 
-                  key={item.id} 
+                <div
+                  key={item.id}
                   className="group relative rounded-xl border-2 bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 overflow-hidden"
-                  style={{ 
+                  style={{
                     borderColor: '#e5e7eb',
-                    animationDelay: `${index * 100}ms` 
+                    animationDelay: `${index * 100}ms`
                   }}
                 >
                   <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ background: `linear-gradient(to bottom right, ${theme.primaryColor}05, ${theme.secondaryColor}05)` }}></div>
-                  
+
                   {item.image && (
                     <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
-                      <img 
-                        src={item.image} 
+                      <img
+                        src={item.image}
                         alt={item.title}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                       />
@@ -1539,7 +1694,7 @@ export default function UserProfilePage() {
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="relative z-10 p-6">
                     {!item.image && (
                       <div className="flex items-start justify-between mb-3">
@@ -1548,14 +1703,14 @@ export default function UserProfilePage() {
                         </div>
                       </div>
                     )}
-                    
+
                     <h3 className="font-bold mb-3 text-lg group-hover:text-primary transition-colors" style={{ color: theme.textColor }}>
                       {item.title}
                     </h3>
                     <p className="text-sm leading-relaxed mb-4 line-clamp-3" style={{ color: theme.textColor }}>
                       {item.description}
                     </p>
-                    
+
                     <div className="flex items-center gap-3">
                       <Link
                         href={`/portfolio/${item.id}?username=${username}`}
@@ -1567,10 +1722,10 @@ export default function UserProfilePage() {
                       {item.link && (
                         <>
                           <span className="text-gray-300">|</span>
-                          <a 
-                            href={item.link} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
+                          <a
+                            href={item.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="inline-flex items-center gap-2 font-semibold text-sm group/link text-primary"
                           >
                             <span>ดูโปรเจค</span>

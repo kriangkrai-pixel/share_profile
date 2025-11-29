@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAdminSession } from "../../hooks/useAdminSession";
 import { useProfile } from "../../context/ProfileContext";
@@ -10,70 +10,311 @@ import { getUsernameFromToken } from "@/lib/jwt-utils";
 
 export default function AboutPage() {
   const router = useRouter();
-  useAdminSession();
+  const pathname = usePathname();
+  
+  // ดึง username จาก URL pathname (สำหรับ /[username]/admin/about)
+  const urlMatch = pathname?.match(/^\/([^/]+)\/admin\/about/);
+  const urlUsername = urlMatch ? urlMatch[1] : null;
+  
+  // Debug: log pathname และ urlUsername
+  console.log("🔍 About Page - pathname:", pathname, "urlUsername:", urlUsername);
+  
+  // ส่ง username ไปให้ useAdminSession เพื่อใช้ token ที่ถูกต้อง
+  useAdminSession(urlUsername || undefined);
   const { profile, updateProfile } = useProfile();
   const [authenticated, setAuthenticated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [loadingWidget, setLoadingWidget] = useState(true);
   const [heroWidgetId, setHeroWidgetId] = useState<number | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profileData, setProfileData] = useState<any>(null);
 
   const [formData, setFormData] = useState({
-    name: profile.name,
-    description: profile.description,
-    bio: profile.bio,
-    achievement: profile.achievement,
-    skills: profile.skills.join("\n"),
-    email: profile.email,
-    phone: profile.phone,
-    location: profile.location,
+    name: "",
+    description: "",
+    bio: "",
+    achievement: "",
+    skills: "",
+    email: "",
+    phone: "",
+    location: "",
     welcomeMessage: "ยินดีต้อนรับ",
     portfolioButtonText: "ดูผลงาน",
     contactButtonText: "ติดต่อฉัน",
   });
 
-  useEffect(() => {
-    const token = localStorage.getItem("adminToken");
-    if (!token) {
-      router.push("/admin/login");
-    } else {
-      setAuthenticated(true);
-      const currentUsername = getUsernameFromToken();
-      setUsername(currentUsername);
-      loadHeroWidgetData();
+  // โหลดข้อมูล profile โดยตรงจาก API พร้อมส่ง username
+  const loadProfile = async (targetUsername?: string) => {
+    try {
+      setLoadingProfile(true);
+      // ใช้ username ที่ส่งมา หรือ urlUsername หรือ username state
+      const finalUsername = targetUsername || urlUsername || username;
+      console.log("🔄 Loading profile for username:", finalUsername, {
+        targetUsername,
+        urlUsername,
+        usernameState: username
+      });
+      
+      if (!finalUsername) {
+        console.error("❌ No username provided to loadProfile");
+        setLoadingProfile(false);
+        return;
+      }
+      
+      const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+        method: "GET",
+        cache: "no-store",
+        username: finalUsername, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
+      });
+      
+      console.log("📥 Profile API response status:", response.status, response.ok, "for username:", finalUsername);
+      
+      if (response.ok) {
+        // ตรวจสอบ Content-Type เพื่อให้แน่ใจว่าเป็น JSON
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          console.warn("⚠️ Response is not JSON, content-type:", contentType);
+        }
+        
+        const data = await response.json();
+        console.log("📥 Profile data received:", {
+          hasData: !!data,
+          name: data?.name || "no name",
+          nameType: typeof data?.name,
+          nameLength: data?.name?.length,
+          nameBytes: data?.name ? new TextEncoder().encode(data.name).length : 0,
+          email: data?.email || "no email",
+          username: finalUsername
+        });
+        
+        if (data && !data.error) {
+          setProfileData(data);
+          
+          // Helper function เพื่อล้างข้อมูลที่ผิดพลาด (เช่น encoding issues)
+          // แต่ไม่ลบข้อมูลที่ถูกต้องออก
+          const cleanString = (str: any): string => {
+            if (!str) return "";
+            if (typeof str !== "string") {
+              try {
+                str = String(str);
+              } catch {
+                return "";
+              }
+            }
+            
+            // ลบเฉพาะ null bytes และ control characters ที่เป็นอันตราย
+            // แต่เก็บ Thai characters และ Unicode characters อื่นๆ ไว้
+            let cleaned = str
+              .replace(/\0/g, '') // ลบ null bytes เท่านั้น
+              .replace(/[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F]/g, ''); // ลบเฉพาะ control characters ที่เป็นอันตราย
+            
+            // ไม่ trim เพราะอาจลบช่องว่างที่จำเป็น
+            // .trim();
+            
+            // ตรวจสอบว่ามี invalid UTF-8 sequences หรือไม่ (แต่ไม่ลบออกถ้าเป็น valid)
+            try {
+              // ลอง encode/decode เพื่อตรวจสอบว่าเป็น valid UTF-8 หรือไม่
+              const encoded = encodeURIComponent(cleaned);
+              const decoded = decodeURIComponent(encoded);
+              // ถ้า decode กลับมาได้เหมือนเดิม แสดงว่า valid
+              if (decoded === cleaned) {
+                return cleaned;
+              }
+            } catch (error) {
+              // ถ้า encode/decode ไม่ได้ ให้ลบเฉพาะ characters ที่ไม่ valid
+              console.warn("⚠️ Invalid UTF-8 sequence detected, cleaning string:", str.substring(0, 50));
+              cleaned = cleaned
+                .split('')
+                .filter(char => {
+                  try {
+                    encodeURIComponent(char);
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                })
+                .join('');
+            }
+            
+            return cleaned;
+          };
+          
+          // อัปเดต formData ด้วยข้อมูลที่ดึงมา (ล้างข้อมูลก่อน)
+          const cleanedData = {
+            name: cleanString(data.name),
+            description: cleanString(data.description),
+            bio: cleanString(data.bio),
+            achievement: cleanString(data.achievement),
+            skills: Array.isArray(data.skills) 
+              ? data.skills.map(cleanString).join("\n") 
+              : cleanString(data.skills),
+            email: cleanString(data.email),
+            phone: cleanString(data.phone),
+            location: cleanString(data.location),
+          };
+          
+          // อัปเดต formData ด้วยข้อมูลที่ล้างแล้ว
+          // ใช้ setTimeout เพื่อให้แน่ใจว่า state update ทำงาน
+          const updatedFormData = {
+            ...cleanedData,
+            welcomeMessage: formData.welcomeMessage || "ยินดีต้อนรับ",
+            portfolioButtonText: formData.portfolioButtonText || "ดูผลงาน",
+            contactButtonText: formData.contactButtonText || "ติดต่อฉัน",
+          };
+          
+          console.log("🔄 Updating formData:", {
+            before: {
+              name: formData.name,
+              email: formData.email,
+            },
+            after: {
+              name: updatedFormData.name,
+              email: updatedFormData.email,
+            },
+            cleaned: {
+              name: cleanedData.name,
+              email: cleanedData.email,
+            },
+            rawData: {
+              name: data.name,
+              email: data.email,
+            }
+          });
+          
+          // อัปเดต formData โดยใช้ functional update เพื่อป้องกัน stale closure
+          setFormData((prev) => ({
+            ...cleanedData,
+            welcomeMessage: prev.welcomeMessage || "ยินดีต้อนรับ",
+            portfolioButtonText: prev.portfolioButtonText || "ดูผลงาน",
+            contactButtonText: prev.contactButtonText || "ติดต่อฉัน",
+          }));
+          
+          console.log("✅ FormData updated with:", {
+            name: cleanedData.name || "empty name",
+            nameLength: cleanedData.name?.length || 0,
+            email: cleanedData.email || "empty email",
+            username: finalUsername,
+            rawName: data.name,
+            rawNameLength: data.name?.length || 0,
+            cleanedName: cleanedData.name,
+            cleanedNameLength: cleanedData.name?.length || 0
+          });
+        } else {
+          console.warn("⚠️ Profile data has error or is invalid:", data?.error, "for username:", finalUsername);
+        }
+      } else {
+        const errorText = await response.text().catch(() => "Unknown error");
+        console.warn("⚠️ Profile API response not OK:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          username: finalUsername
+        });
+        
+        // ถ้า response ไม่ OK อาจเป็นเพราะ token ไม่ถูกต้อง
+        if (response.status === 401) {
+          const { removeTokenForUser } = await import("@/lib/jwt-utils");
+          if (finalUsername) {
+            removeTokenForUser(finalUsername);
+          }
+          router.push("/admin/login");
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error loading profile:", error);
+    } finally {
+      setLoadingProfile(false);
     }
-  }, [router]);
+  };
 
   useEffect(() => {
-    console.log("🔄 Profile data changed, updating formData:", {
-      name: profile.name,
-      email: profile.email,
-      skillsCount: profile.skills?.length || 0,
-    });
-    setFormData((prev) => ({
-      ...prev,
-      name: profile.name,
-      description: profile.description,
-      bio: profile.bio,
-      achievement: profile.achievement,
-      skills: profile.skills?.join("\n") || "",
-      email: profile.email,
-      phone: profile.phone,
-      location: profile.location,
-    }));
-    console.log("✅ FormData updated from profile");
-  }, [profile]);
+    // สร้าง async function ภายใน useEffect
+    const initializeData = async () => {
+      // ใช้ token ตาม username จาก URL หรือ token เก่า
+      let token: string | null = null;
+      if (urlUsername) {
+        const { getTokenForUser } = require("@/lib/jwt-utils");
+        token = getTokenForUser(urlUsername);
+        console.log("🔑 Token for", urlUsername, ":", token ? "found" : "not found");
+      }
+      
+      if (!token) {
+        token = localStorage.getItem("adminToken") || localStorage.getItem("authToken");
+        console.log("🔑 Using fallback token:", token ? "found" : "not found");
+      }
+      
+      if (!token) {
+        console.warn("⚠️ No token found, redirecting to login");
+        router.push("/admin/login");
+        return;
+      }
+      
+      setAuthenticated(true);
+      // ดึง username จาก token ที่ถูกต้อง
+      const currentUsername = getUsernameFromToken(urlUsername || undefined);
+      console.log("👤 Current username from token:", currentUsername);
+      setUsername(currentUsername);
+      
+      // โหลดข้อมูล profile และ widget โดยใช้ urlUsername หรือ currentUsername
+      const targetUsername = urlUsername || currentUsername;
+      if (targetUsername) {
+        // โหลด profile ก่อน แล้วค่อยโหลด widget settings เพื่อไม่ให้ทับข้อมูล profile
+        console.log("📥 Step 1: Loading profile for", targetUsername);
+        await loadProfile(targetUsername);
+        console.log("✅ Step 1: Profile loaded, waiting a bit before loading widget...");
+        
+        // รอสักครู่เพื่อให้ formData ถูกอัปเดตก่อน
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // รอให้ profile โหลดเสร็จก่อน แล้วค่อยโหลด widget settings
+        console.log("📥 Step 2: Loading widget data for", targetUsername);
+        await loadHeroWidgetData(targetUsername);
+        console.log("✅ Step 2: Widget data loaded");
+      } else {
+        // ถ้าไม่มี username ให้ redirect ไป login
+        console.warn("⚠️ No username found, redirecting to login");
+        router.push("/admin/login");
+      }
+    };
+
+    // เรียกใช้ async function
+    initializeData();
+  }, [router, urlUsername]);
+
+  // ไม่ต้องใช้ useEffect นี้แล้ว เพราะเราโหลดข้อมูล profile โดยตรงจาก API แล้ว
+  // useEffect(() => {
+  //   console.log("🔄 Profile data changed, updating formData:", {
+  //     name: profile.name,
+  //     email: profile.email,
+  //     skillsCount: profile.skills?.length || 0,
+  //   });
+  //   setFormData((prev) => ({
+  //     ...prev,
+  //     name: profile.name,
+  //     description: profile.description,
+  //     bio: profile.bio,
+  //     achievement: profile.achievement,
+  //     skills: profile.skills?.join("\n") || "",
+  //     email: profile.email,
+  //     phone: profile.phone,
+  //     location: profile.location,
+  //   }));
+  //   console.log("✅ FormData updated from profile");
+  // }, [profile]);
 
   /**
    * โหลดข้อมูลจาก Hero Widget
    */
-  const loadHeroWidgetData = async () => {
+  const loadHeroWidgetData = async (targetUsername?: string) => {
     try {
       setLoadingWidget(true);
+      const finalUsername = targetUsername || urlUsername || username;
       const response = await apiRequest(API_ENDPOINTS.LAYOUT, {
         method: "GET",
         credentials: "include",
         cache: "no-store",
+        username: finalUsername || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
       });
 
       if (response.ok) {
@@ -101,13 +342,25 @@ export default function AboutPage() {
               }
             }
 
-            // อัปเดต formData ด้วยข้อมูลจาก widget settings
-            setFormData((prev) => ({
-              ...prev,
-              welcomeMessage: (settings as any).welcomeMessage || "ยินดีต้อนรับ",
-              portfolioButtonText: (settings as any).portfolioButtonText || "ดูผลงาน",
-              contactButtonText: (settings as any).contactButtonText || "ติดต่อฉัน",
-            }));
+            // อัปเดต formData ด้วยข้อมูลจาก widget settings (เฉพาะ widget fields เท่านั้น)
+            setFormData((prev) => {
+              const updated = {
+                ...prev, // เก็บข้อมูล profile ไว้ทั้งหมด
+                welcomeMessage: (settings as any).welcomeMessage || prev.welcomeMessage || "ยินดีต้อนรับ",
+                portfolioButtonText: (settings as any).portfolioButtonText || prev.portfolioButtonText || "ดูผลงาน",
+                contactButtonText: (settings as any).contactButtonText || prev.contactButtonText || "ติดต่อฉัน",
+              };
+              
+              console.log("🔄 Updating formData with widget settings:", {
+                name: updated.name, // ตรวจสอบว่าชื่อยังอยู่หรือไม่
+                email: updated.email, // ตรวจสอบว่าอีเมลยังอยู่หรือไม่
+                welcomeMessage: updated.welcomeMessage,
+                portfolioButtonText: updated.portfolioButtonText,
+                contactButtonText: updated.contactButtonText,
+              });
+              
+              return updated;
+            });
           }
         }
       }
@@ -137,17 +390,50 @@ export default function AboutPage() {
         .filter((s) => s);
 
       // อัปเดต profile data รวมถึงรูปภาพ
+      // ใช้ API request โดยตรงเพื่อส่ง username ไปด้วย
       try {
-        await updateProfile({
-          name: formData.name,
-          description: formData.description,
-          bio: formData.bio,
-          achievement: formData.achievement,
-          skills: skillsArray,
-          email: formData.email,
-          phone: formData.phone,
-          location: formData.location,
+        const response = await apiRequest(API_ENDPOINTS.PROFILE, {
+          method: "PUT",
+          body: JSON.stringify({
+            name: formData.name,
+            description: formData.description,
+            bio: formData.bio,
+            achievement: formData.achievement,
+            email: formData.email,
+            phone: formData.phone,
+            location: formData.location,
+          }),
+          username: urlUsername || username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
+        
+        if (!response.ok) {
+          let errorMessage = `Failed to update profile: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            if (errorData.message) {
+              if (Array.isArray(errorData.message)) {
+                errorMessage = errorData.message.join(', ');
+              } else {
+                errorMessage = errorData.message;
+              }
+            }
+          } catch (e) {
+            // ถ้า parse JSON ไม่ได้ ให้ใช้ error message เริ่มต้น
+          }
+          throw new Error(errorMessage);
+        }
+        
+        // อัปเดต skills แยก
+        if (skillsArray.length > 0) {
+          await apiRequest(API_ENDPOINTS.SKILLS, {
+            method: "PUT",
+            body: JSON.stringify({ skills: skillsArray }),
+            username: urlUsername || username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
+          });
+        }
+        
+        // Refresh ข้อมูล profile หลังจากบันทึกสำเร็จ
+        await loadProfile(urlUsername || username || undefined);
       } catch (error: any) {
         console.error("Error updating profile:", error);
         const errorMessage = error?.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล";
@@ -168,6 +454,7 @@ export default function AboutPage() {
             method: "GET",
             credentials: "include",
             cache: "no-store",
+            username: urlUsername || username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
           });
 
           if (layoutResponse.ok) {
@@ -206,6 +493,7 @@ export default function AboutPage() {
                 id: heroWidgetId,
                 settings: JSON.stringify(newSettings),
               }),
+              username: urlUsername || username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
             });
           }
         } catch (widgetError) {
@@ -223,6 +511,7 @@ export default function AboutPage() {
             action: "update",
             newValue: "Updated profile information and hero section",
           }),
+          username: urlUsername || username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
       } catch (historyError) {
         // Ignore history logging errors
@@ -269,6 +558,18 @@ export default function AboutPage() {
 
   if (!authenticated) return null;
 
+  // แสดง loading state ขณะโหลดข้อมูล
+  if (loadingProfile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
       {/* Header */}
@@ -277,7 +578,7 @@ export default function AboutPage() {
           <div className="flex items-center justify-between">
             <div>
               <Link
-                href="/admin"
+                href={username ? `/${username}/admin` : "/admin/login"}
                 className="text-purple-600 hover:text-purple-700 text-sm font-medium inline-flex items-center gap-2 mb-2"
               >
                 <span>←</span>
@@ -328,13 +629,20 @@ export default function AboutPage() {
                 </label>
                 <input
                   type="text"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
+                  value={formData.name || ""}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, name: e.target.value }));
+                  }}
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
                   placeholder="ระบุชื่อ-นามสกุล"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  {formData.name ? (
+                    <>💡 ข้อมูลปัจจุบัน: "{formData.name}" (ความยาว: {formData.name.length} ตัวอักษร)</>
+                  ) : (
+                    <>⚠️ ยังไม่มีข้อมูล - กำลังโหลด...</>
+                  )}
+                </p>
               </div>
 
               <div>
@@ -342,9 +650,9 @@ export default function AboutPage() {
                   คำอธิบายสั้นๆ (Hero Section)
                 </label>
                 <textarea
-                  value={formData.description}
+                  value={formData.description || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
+                    setFormData((prev) => ({ ...prev, description: e.target.value }))
                   }
                   rows={3}
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
@@ -369,9 +677,9 @@ export default function AboutPage() {
                 </label>
                 <input
                   type="text"
-                  value={formData.welcomeMessage}
+                  value={formData.welcomeMessage || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, welcomeMessage: e.target.value })
+                    setFormData((prev) => ({ ...prev, welcomeMessage: e.target.value }))
                   }
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-200"
                   placeholder="ยินดีต้อนรับ"
@@ -389,9 +697,9 @@ export default function AboutPage() {
                   </label>
                   <input
                     type="text"
-                    value={formData.portfolioButtonText}
+                    value={formData.portfolioButtonText || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, portfolioButtonText: e.target.value })
+                      setFormData((prev) => ({ ...prev, portfolioButtonText: e.target.value }))
                     }
                     className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-200"
                     placeholder="ดูผลงาน"
@@ -403,9 +711,9 @@ export default function AboutPage() {
                   </label>
                   <input
                     type="text"
-                    value={formData.contactButtonText}
+                    value={formData.contactButtonText || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, contactButtonText: e.target.value })
+                      setFormData((prev) => ({ ...prev, contactButtonText: e.target.value }))
                     }
                     className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-200"
                     placeholder="ติดต่อฉัน"
@@ -429,9 +737,9 @@ export default function AboutPage() {
                   Bio (ประวัติ)
                 </label>
                 <textarea
-                  value={formData.bio}
+                  value={formData.bio || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, bio: e.target.value })
+                    setFormData((prev) => ({ ...prev, bio: e.target.value }))
                   }
                   rows={6}
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-200"
@@ -444,9 +752,9 @@ export default function AboutPage() {
                   ความสำเร็จ (Achievement)
                 </label>
                 <textarea
-                  value={formData.achievement}
+                  value={formData.achievement || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, achievement: e.target.value })
+                    setFormData((prev) => ({ ...prev, achievement: e.target.value }))
                   }
                   rows={4}
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-200"
@@ -468,9 +776,9 @@ export default function AboutPage() {
                 รายการทักษะ (แต่ละบรรทัดคือ 1 ทักษะ)
               </label>
               <textarea
-                value={formData.skills}
+                value={formData.skills || ""}
                 onChange={(e) =>
-                  setFormData({ ...formData, skills: e.target.value })
+                  setFormData((prev) => ({ ...prev, skills: e.target.value }))
                 }
                 rows={10}
                 className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 font-mono text-sm"
@@ -497,9 +805,9 @@ export default function AboutPage() {
                 <input
                   type="email"
                   required
-                  value={formData.email}
+                  value={formData.email || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
+                    setFormData((prev) => ({ ...prev, email: e.target.value }))
                   }
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-200"
                   placeholder="example@mail.com"
@@ -517,9 +825,9 @@ export default function AboutPage() {
                 </label>
                 <input
                   type="tel"
-                  value={formData.phone}
+                  value={formData.phone || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, phone: e.target.value })
+                    setFormData((prev) => ({ ...prev, phone: e.target.value }))
                   }
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-200"
                   placeholder="0XX-XXX-XXXX"
@@ -532,9 +840,9 @@ export default function AboutPage() {
                 </label>
                 <input
                   type="text"
-                  value={formData.location}
+                  value={formData.location || ""}
                   onChange={(e) =>
-                    setFormData({ ...formData, location: e.target.value })
+                    setFormData((prev) => ({ ...prev, location: e.target.value }))
                   }
                   className="w-full rounded-xl border-2 border-gray-300 px-4 py-3 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-200"
                   placeholder="จังหวัด, ประเทศ"
