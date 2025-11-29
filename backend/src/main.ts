@@ -72,18 +72,26 @@ export default async (req: any, res: any) => {
   try {
     if (!appInstance) {
       console.log('🚀 Initializing NestJS app for Vercel...');
+      console.log('📝 Request URL:', req.url);
+      console.log('📝 Request Method:', req.method);
+      console.log('📝 NODE_ENV:', process.env.NODE_ENV);
+      console.log('📝 DATABASE_URL exists:', !!process.env.DATABASE_URL);
+      
       appInstance = await createApp();
-      // NestFactory.create() จัดการ initialization ให้แล้ว ไม่ต้องเรียก init()
+      console.log('✅ NestJS app initialized successfully');
     }
     
     const handler = appInstance.getHttpAdapter().getInstance();
     return handler(req, res);
   } catch (error) {
     console.error('❌ Error in Vercel serverless function:', error);
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
     if (!res.headersSent) {
       res.status(500).json({
         error: 'Internal Server Error',
         message: error instanceof Error ? error.message : 'Unknown error',
+        stack: process.env.NODE_ENV === 'development' && error instanceof Error ? error.stack : undefined,
       });
     }
   }
