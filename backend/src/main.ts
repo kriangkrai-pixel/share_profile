@@ -69,12 +69,23 @@ if (process.env.NODE_ENV !== 'production') {
 
 // ถ้าอยู่บน Vercel ให้ Export ออกไปเป็น Function
 export default async (req: any, res: any) => {
-  if (!appInstance) {
-    appInstance = await createApp();
-    await appInstance.init();
+  try {
+    if (!appInstance) {
+      console.log('🚀 Initializing NestJS app for Vercel...');
+      appInstance = await createApp();
+      // NestFactory.create() จัดการ initialization ให้แล้ว ไม่ต้องเรียก init()
+    }
+    
+    const handler = appInstance.getHttpAdapter().getInstance();
+    return handler(req, res);
+  } catch (error) {
+    console.error('❌ Error in Vercel serverless function:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
-  
-  const instance = appInstance.getHttpAdapter().getInstance();
-  return instance(req, res);
 };
 
