@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Widget } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -106,7 +106,7 @@ async function main() {
   
   console.log('✅ Created default layout with', layout.widgets.length, 'widgets');
   console.log('Layout ID:', layout.id);
-  console.log('Widgets:', layout.widgets.map(w => `${w.type} (order: ${w.order})`));
+  console.log('Widgets:', layout.widgets.map((w: Widget) => `${w.type} (order: ${w.order})`));
 }
 
 main()
