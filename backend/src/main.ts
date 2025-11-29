@@ -11,6 +11,15 @@ async function createApp() {
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
+  // Handle static files (favicon.ico, robots.txt, etc.) - return 404 instead of 500
+  app.use((req, res, next) => {
+    // ถ้าเป็น static files ที่ไม่ใช่ API routes ให้ return 404
+    if (req.path === '/favicon.ico' || req.path === '/robots.txt' || req.path === '/sitemap.xml') {
+      return res.status(404).end();
+    }
+    next();
+  });
+
   
   // Enable CORS with proper configuration
   app.enableCors({
