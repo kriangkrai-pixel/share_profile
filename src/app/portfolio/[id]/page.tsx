@@ -19,7 +19,7 @@
  * - แสดง 404 ถ้าไม่พบผลงาน
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -33,7 +33,7 @@ interface Portfolio {
   link?: string;
 }
 
-export default function PortfolioDetailPage() {
+function PortfolioDetailContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -287,6 +287,21 @@ export default function PortfolioDetailPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function PortfolioDetailPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-700 font-semibold">กำลังโหลด...</p>
+        </div>
+      </div>
+    }>
+      <PortfolioDetailContent />
+    </Suspense>
   );
 }
 

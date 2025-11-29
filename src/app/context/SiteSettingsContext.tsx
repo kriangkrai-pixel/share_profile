@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
   ReactNode,
+  Suspense,
 } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { API_ENDPOINTS, apiRequest, isConnectionError } from "@/lib/api-config";
@@ -122,7 +123,7 @@ const RESERVED_PATH_SEGMENTS = new Set([
 
 const SiteSettingsContext = createContext<SiteSettingsContextValue | undefined>(undefined);
 
-export function SiteSettingsProvider({ children }: { children: ReactNode }) {
+function SiteSettingsProviderInner({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const queryOwner = searchParams?.get("username")?.trim() || null;
@@ -282,6 +283,14 @@ export function SiteSettingsProvider({ children }: { children: ReactNode }) {
     <SiteSettingsContext.Provider value={value}>
       {children}
     </SiteSettingsContext.Provider>
+  );
+}
+
+export function SiteSettingsProvider({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh' }} />}>
+      <SiteSettingsProviderInner>{children}</SiteSettingsProviderInner>
+    </Suspense>
   );
 }
 
