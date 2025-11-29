@@ -145,7 +145,7 @@ export default function ThemeSettingsPage() {
       const invalidColors: string[] = [];
       for (const field of colorFields) {
         const color = settings[field as keyof SiteSettings];
-        if (color && !/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) {
+        if (color && !/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(String(color))) {
           invalidColors.push(field);
         }
       }

@@ -52,7 +52,7 @@ interface ThemeHeaderConfig {
 }
 
 interface ThemeFooterConfig {
-  [x: string]: string;
+  [x: string]: string | ThemeNavLink[] | Array<{ label: string; url: string }> | undefined;
   text?: string;
   backgroundColor?: string;
   textColor?: string;

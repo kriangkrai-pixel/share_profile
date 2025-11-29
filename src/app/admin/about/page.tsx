@@ -126,7 +126,7 @@ export default function AboutPage() {
               console.warn("⚠️ Invalid UTF-8 sequence detected, cleaning string:", str.substring(0, 50));
               cleaned = cleaned
                 .split('')
-                .filter(char => {
+                .filter((char: string) => {
                   try {
                     encodeURIComponent(char);
                     return true;

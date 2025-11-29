@@ -314,7 +314,6 @@ export default function PortfoliosPage() {
           username: urlUsername || username || undefined,
           method: "PUT",
           body: JSON.stringify({ portfolios: updatedPortfolios }),
-          username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
       } else {
         // เพิ่มใหม่: ส่ง single object
@@ -322,7 +321,6 @@ export default function PortfoliosPage() {
           username: urlUsername || username || undefined,
           method: "POST",
           body: JSON.stringify(formData),
-          username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
         });
       }
 
@@ -338,7 +336,6 @@ export default function PortfoliosPage() {
               itemId: editingPortfolio?.id,
               newValue: formData.title,
             }),
-            username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
           });
         } catch (historyError) {
           console.warn("Failed to log edit history:", historyError);
@@ -378,7 +375,6 @@ export default function PortfoliosPage() {
       const response = await apiRequest(`${API_ENDPOINTS.PORTFOLIO}?id=${id}`, {
         username: urlUsername || username || undefined,
         method: "DELETE",
-        username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
       });
 
       if (response.ok) {

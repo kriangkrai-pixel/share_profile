@@ -167,9 +167,9 @@ export async function apiRequest(
   }
 ) {
   // ถ้าไม่มี username ใน options ให้ลองดึงจาก pathname หรือจาก token
-  let username = options?.username;
+  let username: string | undefined = options?.username;
   if (!username) {
-    username = getUsernameFromPathname();
+    username = getUsernameFromPathname() || undefined;
     
     // ถ้ายังหา username ไม่เจอจาก pathname ให้ลองดึงจาก token
     if (!username) {
@@ -218,9 +218,9 @@ export async function apiRequest(
   // Only set Content-Type for requests with body (POST, PUT, PATCH) and not FormData
   const needsContentType = ['POST', 'PUT', 'PATCH'].includes(method.toUpperCase()) && !isFormData;
   
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     ...(needsContentType && { 'Content-Type': 'application/json' }),
-    ...options?.headers,
+    ...(options?.headers as Record<string, string> || {}),
   };
 
   if (token) {

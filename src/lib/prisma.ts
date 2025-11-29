@@ -26,7 +26,7 @@ if (process.env.NODE_ENV !== 'production') {
       console.log('✅ Prisma connected to database')
       console.log('⚡ Connection pool ready')
     })
-    .catch((e) => {
+    .catch((e: unknown) => {
       console.error('❌ Prisma connection failed:', e)
       // Retry connection after 2 seconds
       setTimeout(() => {
