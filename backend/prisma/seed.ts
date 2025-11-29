@@ -13,9 +13,9 @@ async function main() {
     user = await prisma.user.create({
       data: {
         username: 'Admin',
-        email: 'kik550123@gmail.com',
+        email: 'admin@example.com',
         password: '$2b$10$defaultpasswordhash', // Default hash (ควรเปลี่ยนในภายหลัง)
-        name: 'เกรียงไกร ภูทองก้าน',
+        name: 'Admin User',
       },
     });
     console.log('✅ Created default user:', user.username);
@@ -27,12 +27,12 @@ async function main() {
     update: {},
     create: {
       userId: user.id,
-      name: 'เกรียงไกร ภูทองก้าน',
-      email: 'kik550123@gmail.com',
-      phone: '091-826-6369',
-      location: 'Phuket, Thailand',
+      name: 'Example User',
+      email: 'example@example.com',
+      phone: '000-000-0000',
+      location: 'Bangkok, Thailand',
       description: 'Full Stack Developer',
-      bio: 'ผม เกรียงไกร ภูทองก้าน นักพัฒนาเว็บไซต์ที่มีประสบการณ์ในการสร้างเว็บแอปพลิเคชันที่ทันสมัยและมีประสิทธิภาพ',
+      bio: 'นักพัฒนาเว็บไซต์ที่มีประสบการณ์ในการสร้างเว็บแอปพลิเคชันที่ทันสมัยและมีประสิทธิภาพ',
       achievement: 'สำเร็จการศึกษาระดับปริญญาตรี สาขาเทคโนโลยีสารสนเทศ จากมหาวิทยาลัยชั้นนำ พร้อมประสบการณ์ในการพัฒนาโปรเจคต่างๆ',
     },
   });

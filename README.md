@@ -454,11 +454,11 @@ This project is licensed under the MIT License.
 
 ## 👤 ผู้พัฒนา
 
-**Kriangkrai Phutongkan**
+**Developer**
 
-- 📧 Email: kik550123@gmail.com
-- 📱 Phone: 091-826-6369
-- 📍 Location: Phuket, Thailand
+- 📧 Email: developer@example.com
+- 📱 Phone: 000-000-0000
+- 📍 Location: Bangkok, Thailand
 
 ---
 

@@ -190,9 +190,9 @@ export class ProfileService {
         user = await this.prisma.user.create({
           data: {
             username: 'Admin',
-            email: 'kik550123@gmail.com',
+            email: 'admin@example.com',
             password: '$2b$10$defaultpasswordhash', // Default hash (ควรเปลี่ยนในภายหลัง)
-            name: 'เกรียงไกร ภูทองก้าน',
+            name: 'Admin User',
           },
         });
       }
@@ -201,45 +201,45 @@ export class ProfileService {
       profile = await this.prisma.profile.create({
         data: {
           userId: user.id,
-          name: 'เกรียงไกร ภูทองก้าน',
-          email: 'kik550123@gmail.com',
-          phone: '091-826-6369',
-          location: 'Phuket, Thailand',
+          name: 'Example User',
+          email: 'example@example.com',
+          phone: '000-000-0000',
+          location: 'Bangkok, Thailand',
           description:
-            'นักศึกษาปี 4 สาขาวิชาคอมพิวเตอร์ สนใจออกแบบระบบ พัฒนาเว็บไซต์ เขียนโปรแกรม และสร้างเกม พร้อมพัฒนาทักษะอย่างต่อเนื่อง',
-          bio: 'ฉันเป็นนักศึกษาปี 4 สาขาวิชาคอมพิวเตอร์ มหาวิทยาลัยราชภัฏภูเก็ต มีความสนใจด้านการออกแบบระบบ การพัฒนาเว็บไซต์ การเขียนโปรแกรม รวมถึงการสร้างเกม มีความสนใจในสิ่งใหม่ๆ และพร้อมพัฒนาทักษะในสายงานเทคโนโลยีอย่างต่อเนื่อง',
+            'Full Stack Developer สนใจออกแบบระบบ พัฒนาเว็บไซต์ เขียนโปรแกรม และสร้างแอปพลิเคชัน พร้อมพัฒนาทักษะอย่างต่อเนื่อง',
+          bio: 'นักพัฒนาเว็บไซต์ที่มีประสบการณ์ในการสร้างเว็บแอปพลิเคชันที่ทันสมัยและมีประสิทธิภาพ มีความสนใจในสิ่งใหม่ๆ และพร้อมพัฒนาทักษะในสายงานเทคโนโลยีอย่างต่อเนื่อง',
           achievement:
-            'เคยทำโปรเจกต์เกี่ยวกับทางด้านเกมโดยใช้ Unreal Engine 5 และมีผลงานตีพิมพ์ในงานประชุมวิชาการระดับนานาชาติเรื่อง "Development of Adventure Games and Puzzle Solving in Mysterious Museums" ตีพิมพ์ IEEE Xplore',
+            'มีประสบการณ์ในการพัฒนาโปรเจกต์ต่างๆ และพร้อมพัฒนาทักษะอย่างต่อเนื่อง',
           skills: {
             create: [
               { name: 'HTML, CSS, JavaScript' },
-              { name: 'Unreal Engine (Blueprint)' },
-              { name: 'Game Design & Puzzle Logic' },
+              { name: 'React' },
+              { name: 'Node.js' },
             ],
           },
           education: {
             create: [
               {
                 type: 'university',
-                field: 'สาขาวิชาคอมพิวเตอร์',
-                institution: 'มหาวิทยาลัยราชภัฏภูเก็ต',
+                field: 'สาขาเทคโนโลยีสารสนเทศ',
+                institution: 'มหาวิทยาลัยตัวอย่าง',
                 year: 'ปี 4',
               },
               {
                 type: 'highschool',
                 field: 'คณิต-อังกฤษ',
-                institution: 'โรงเรียนเมืองถลาง',
-                gpa: '3.03',
+                institution: 'โรงเรียนตัวอย่าง',
+                gpa: '3.00',
               },
             ],
           },
           experiences: {
             create: [
               {
-                title: 'ออกแบบเว็บไซต์ด้วย WordPress',
-                company: 'บริษัท ภูเก็ตดีมีเดีย',
-                location: 'ภูเก็ต',
-                period: 'ปี พ.ศ. 2568 - พ.ศ. 2568',
+                title: 'Frontend Developer',
+                company: 'บริษัทตัวอย่าง',
+                location: 'กรุงเทพฯ',
+                period: 'ปี พ.ศ. 2568 - ปัจจุบัน',
               },
             ],
           },

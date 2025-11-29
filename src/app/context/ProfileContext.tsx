@@ -47,34 +47,34 @@ interface ProfileData {
 }
 
 const defaultProfile: ProfileData = {
-  name: "เกรียงไกร ภูทองก้าน",
-  email: "kik550123@gmail.com",
-  phone: "091-826-6369",
-  location: "Phuket, Thailand",
-  description: "นักศึกษาปี 4 สาขาวิชาคอมพิวเตอร์ สนใจออกแบบระบบ พัฒนาเว็บไซต์ เขียนโปรแกรม และสร้างเกม พร้อมพัฒนาทักษะอย่างต่อเนื่อง",
-  bio: "ฉันเป็นนักศึกษาปี 4 สาขาวิชาคอมพิวเตอร์ มหาวิทยาลัยราชภัฏภูเก็ต มีความสนใจด้านการออกแบบระบบ การพัฒนาเว็บไซต์ การเขียนโปรแกรม รวมถึงการสร้างเกม มีความสนใจในสิ่งใหม่ๆ และพร้อมพัฒนาทักษะในสายงานเทคโนโลยีอย่างต่อเนื่อง",
-  achievement: "เคยทำโปรเจกต์เกี่ยวกับทางด้านเกมโดยใช้ Unreal Engine 5 และมีผลงานตีพิมพ์ในงานประชุมวิชาการระดับนานาชาติเรื่อง \"Development of Adventure Games and Puzzle Solving in Mysterious Museums\" ตีพิมพ์ IEEE Xplore",
-  skills: ["HTML, CSS, JavaScript", "Unreal Engine (Blueprint)", "Game Design & Puzzle Logic"],
+  name: "Example User",
+  email: "example@example.com",
+  phone: "000-000-0000",
+  location: "Bangkok, Thailand",
+  description: "Full Stack Developer สนใจออกแบบระบบ พัฒนาเว็บไซต์ เขียนโปรแกรม และสร้างแอปพลิเคชัน พร้อมพัฒนาทักษะอย่างต่อเนื่อง",
+  bio: "นักพัฒนาเว็บไซต์ที่มีประสบการณ์ในการสร้างเว็บแอปพลิเคชันที่ทันสมัยและมีประสิทธิภาพ มีความสนใจในสิ่งใหม่ๆ และพร้อมพัฒนาทักษะในสายงานเทคโนโลยีอย่างต่อเนื่อง",
+  achievement: "มีประสบการณ์ในการพัฒนาโปรเจกต์ต่างๆ และพร้อมพัฒนาทักษะอย่างต่อเนื่อง",
+  skills: ["HTML, CSS, JavaScript", "React", "Node.js"],
   education: {
     university: {
-      field: "สาขาวิชาคอมพิวเตอร์",
-      university: "มหาวิทยาลัยราชภัฏภูเก็ต",
+      field: "สาขาเทคโนโลยีสารสนเทศ",
+      university: "มหาวิทยาลัยตัวอย่าง",
       year: "ปี 4",
       status: "studying",
     },
     highschool: {
       field: "คณิต-อังกฤษ",
-      school: "โรงเรียนเมืองถลาง",
-      gpa: "3.03",
+      school: "โรงเรียนตัวอย่าง",
+      gpa: "3.00",
     },
   },
   experience: [
     {
       id: 1,
-      title: "ออกแบบเว็บไซต์ด้วย WordPress",
-      company: "บริษัท ภูเก็ตดีมีเดีย",
-      location: "ภูเก็ต",
-      period: "ปี พ.ศ. 2568 - พ.ศ. 2568",
+      title: "Frontend Developer",
+      company: "บริษัทตัวอย่าง",
+      location: "กรุงเทพฯ",
+      period: "ปี พ.ศ. 2568 - ปัจจุบัน",
     },
   ],
   portfolio: [
