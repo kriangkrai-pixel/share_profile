@@ -22,13 +22,47 @@ async function createApp() {
 
   
   // Enable CORS with proper configuration
+  // ระบุ origin ที่ชัดเจน (ไม่สามารถใช้ '*' กับ credentials: true ร่วมกันได้)
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    // เพิ่ม frontend URLs บน Render
+    'https://share-profile-3.onrender.com',
+    // รองรับ subdomain อื่นๆ บน Render
+    /^https:\/\/.*\.onrender\.com$/,
+  ];
+
+  // Log CORS configuration for debugging
+  console.log('🔒 CORS Configuration:');
+  console.log('  - FRONTEND_URL:', process.env.FRONTEND_URL || 'not set');
+  console.log('  - Allowed origins:', allowedOrigins);
+
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      process.env.FRONTEND_URL || 'http://localhost:3000',
-      '*'
-    ],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      // Check if origin is in allowed list
+      const isAllowed = allowedOrigins.some(allowedOrigin => {
+        if (typeof allowedOrigin === 'string') {
+          return origin === allowedOrigin;
+        }
+        if (allowedOrigin instanceof RegExp) {
+          return allowedOrigin.test(origin);
+        }
+        return false;
+      });
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        console.warn(`⚠️ CORS: Blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
