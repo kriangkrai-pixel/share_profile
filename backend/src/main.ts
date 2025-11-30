@@ -71,12 +71,18 @@ async function bootstrap() {
   console.log(`📦 Body parser limit: 10mb (supports Base64 images)`);
 }
 
-// ถ้าเป็นการรัน Local (ในเครื่องตัวเอง) ให้ทำงานปกติ
-if (process.env.NODE_ENV !== 'production') {
-  bootstrap();
+// ตรวจสอบว่าเป็น Vercel serverless หรือไม่
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+
+// ถ้าไม่ใช่ Vercel ให้รัน bootstrap() (รองรับ Render, Railway, Docker, local development)
+if (!isVercel) {
+  bootstrap().catch((error) => {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  });
 }
 
-// ถ้าอยู่บน Vercel ให้ Export ออกไปเป็น Function
+// Export สำหรับ Vercel serverless function
 export default async (req: any, res: any) => {
   try {
     if (!appInstance) {
