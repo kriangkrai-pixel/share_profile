@@ -17,6 +17,31 @@ export default function Footer() {
     return null;
   }
 
+  // ดึง username จาก pathname ถ้ามี (เช่น /john -> john)
+  const usernameMatch = pathname?.match(/^\/([^/]+)$/);
+  const username = usernameMatch ? usernameMatch[1] : null;
+
+  // ฟังก์ชันสำหรับสร้าง href ที่ถูกต้อง
+  const getLinkHref = (href: string) => {
+    // ถ้าเป็น external link หรือ absolute URL ให้ใช้ตามเดิม
+    if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//')) {
+      return href;
+    }
+    // ถ้าเป็น anchor link (#...) และมี username ให้เพิ่ม username หน้า #
+    if (href.startsWith('#') && username) {
+      return `/${username}${href}`;
+    }
+    // ถ้าเป็น anchor link ที่เริ่มด้วย /# ให้แปลงเป็น /[username]# หรือ /# ตาม pathname
+    if (href.startsWith('/#')) {
+      if (username) {
+        return `/${username}${href.substring(1)}`; // แปลง /#portfolio เป็น /john#portfolio
+      }
+      return href; // ถ้าไม่มี username ให้ใช้ตามเดิม
+    }
+    // สำหรับ path อื่นๆ ให้ใช้ตามเดิม
+    return href;
+  };
+
   const year = new Date().getFullYear();
   const navLinks =
     settings.footerLinks?.length > 0 ? settings.footerLinks : footerTheme.links || [];
@@ -66,7 +91,7 @@ export default function Footer() {
               {navLinks.map((link) => (
                 <li key={link.label}>
                   <Link
-                    href={link.href}
+                    href={getLinkHref(link.href)}
                     target={link.external ? "_blank" : undefined}
                     rel={link.external ? "noopener noreferrer" : undefined}
                     className="hover:opacity-100 transition-opacity"
@@ -109,7 +134,7 @@ export default function Footer() {
             {navLinks.slice(0, 2).map((link) => (
               <Link
                 key={`footer-bottom-${link.label}`}
-                href={link.href}
+                href={getLinkHref(link.href)}
                 className="text-sm hover:opacity-100 transition-opacity"
                 style={{ color: textColor, opacity: 0.9 }}
               >

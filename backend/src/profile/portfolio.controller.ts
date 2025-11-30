@@ -13,10 +13,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { S3Service } from '../upload/s3.service';
 
 @Controller('profile/portfolio')
 export class PortfolioController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private s3Service: S3Service,
+  ) {}
 
   /**
    * Helper method: หา PageContent จาก userId และสร้างถ้ายังไม่มี
@@ -72,6 +76,85 @@ export class PortfolioController {
   }
 
   /**
+   * Helper method: แปลง image URL/path เป็น proxy URL
+   * Handle ทั้งกรณีที่เป็น Base64 (ข้อมูลเก่า), full URL (ข้อมูลเก่า), และ relative path (ข้อมูลใหม่)
+   */
+  private convertToProxyUrl(imageUrl: string | null | undefined): string | null | undefined {
+    if (!imageUrl) {
+      return imageUrl;
+    }
+
+    // ถ้าเป็น base64 (เริ่มต้นด้วย data:) ให้ return ตามเดิม (backward compatibility)
+    if (imageUrl.startsWith('data:')) {
+      return imageUrl;
+    }
+
+    // ถ้าเป็น full URL (ข้อมูลเก่า) ให้แปลงเป็น relative path ก่อน
+    let relativePath = imageUrl;
+    
+    // ตรวจสอบว่าเป็น localhost URL หรือไม่ (ข้อมูลเก่าจาก development)
+    if (imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1') || imageUrl.includes(':10000') || imageUrl.includes(':3001')) {
+      // Extract path จาก localhost URL
+      // เช่น http://localhost:10000/api/images/uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
+      const uploadsMatch = imageUrl.match(/\/uploads\/.*/);
+      if (uploadsMatch) {
+        relativePath = uploadsMatch[0];
+      } else {
+        // ถ้าไม่เจอ /uploads/ ให้ลอง extract จาก /api/images/
+        const apiImagesMatch = imageUrl.match(/\/api\/images\/(.+)/);
+        if (apiImagesMatch) {
+          relativePath = `/${apiImagesMatch[1]}`;
+        } else {
+          // Fallback: ใช้ pathname จาก URL
+          try {
+            const url = new URL(imageUrl);
+            relativePath = url.pathname;
+          } catch (e) {
+            const pathMatch = imageUrl.match(/\/[^?]*/);
+            if (pathMatch) {
+              relativePath = pathMatch[0];
+            }
+          }
+        }
+      }
+    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      try {
+        const url = new URL(imageUrl);
+        relativePath = url.pathname;
+      } catch (e) {
+        // ถ้า parse ไม่ได้ ให้ extract path จาก URL string
+        const match = imageUrl.match(/\/uploads\/.*/);
+        if (match) {
+          relativePath = match[0];
+        } else {
+          // ถ้าไม่เจอ /uploads/ ให้ใช้ pathname จาก URL string
+          const pathMatch = imageUrl.match(/\/[^?]*/);
+          if (pathMatch) {
+            relativePath = pathMatch[0];
+          }
+        }
+      }
+    }
+
+    // ลบ /api/images prefix ถ้ามี (ป้องกันการซ้ำซ้อน)
+    // เช่น /api/images/uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
+    if (relativePath.startsWith('/api/images/')) {
+      relativePath = relativePath.replace(/^\/api\/images/, '');
+    } else if (relativePath.startsWith('/api/images')) {
+      relativePath = relativePath.replace(/^\/api\/images/, '');
+    }
+
+    // Normalize path: ถ้า path ไม่ขึ้นต้นด้วย /uploads/ แต่มี uploads/ ให้เพิ่ม /
+    // เช่น uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
+    if (relativePath.startsWith('uploads/') && !relativePath.startsWith('/uploads/')) {
+      relativePath = `/${relativePath}`;
+    }
+
+    // แปลง relative path เป็น proxy URL
+    return this.s3Service.getProxyUrl(relativePath);
+  }
+
+  /**
    * GET /api/profile/portfolio
    * ดึงข้อมูลผลงานทั้งหมด
    * Protected: ต้อง login ก่อน
@@ -90,8 +173,14 @@ export class PortfolioController {
         return [];
       }
 
-      console.log(`📋 Fetched ${pageContent.portfolios.length} portfolios for user: ${req.user.username}`);
-      return pageContent.portfolios;
+      // แปลง image URL เป็น proxy URLs สำหรับ portfolios
+      const portfolios = pageContent.portfolios.map((portfolio: any) => ({
+        ...portfolio,
+        image: this.convertToProxyUrl(portfolio.image),
+      }));
+
+      console.log(`📋 Fetched ${portfolios.length} portfolios for user: ${req.user.username}`);
+      return portfolios;
     } catch (error) {
       console.error('❌ Error fetching portfolios:', error);
       throw error;
@@ -117,10 +206,12 @@ export class PortfolioController {
         throw new BadRequestException('กรุณากรอกชื่อและคำอธิบายผลงาน');
       }
 
-      // Log image size for debugging
-      if (image) {
+      // Log image size for debugging (เฉพาะ Base64)
+      if (image && image.startsWith('data:')) {
         const imageSizeKB = Math.round((image.length * 3) / 4 / 1024);
-        console.log(`📷 Creating portfolio with image: ${imageSizeKB} KB`);
+        console.log(`📷 Creating portfolio with Base64 image: ${imageSizeKB} KB`);
+      } else if (image) {
+        console.log(`📷 Creating portfolio with image URL: ${image.substring(0, 50)}...`);
       }
 
       const pageContent = await this.getOrCreatePageContent(req.user.userId);
@@ -137,8 +228,14 @@ export class PortfolioController {
         },
       });
 
+      // แปลง image URL เป็น proxy URL ก่อน return (ถ้าไม่ใช่ Base64)
+      const portfolioWithProxyUrl = {
+        ...portfolio,
+        image: this.convertToProxyUrl(portfolio.image),
+      };
+
       console.log(`✅ Portfolio created: ${portfolio.title} (ID: ${portfolio.id}) for user: ${req.user.username}`);
-      return { success: true, portfolio };
+      return { success: true, portfolio: portfolioWithProxyUrl };
     } catch (error: any) {
       console.error('❌ Error creating portfolio:', error);
       
@@ -186,15 +283,19 @@ export class PortfolioController {
 
       // เพิ่มผลงานใหม่ทั้งหมด
       if (portfolios && portfolios.length > 0) {
-        // Log image sizes for debugging
+        // Log image info for debugging
         portfolios.forEach((port: any, index: number) => {
           if (port.image) {
-            const imageSizeKB = Math.round((port.image.length * 3) / 4 / 1024);
-            console.log(`📷 Portfolio ${index + 1} image size: ${imageSizeKB} KB`);
+            if (port.image.startsWith('data:')) {
+              const imageSizeKB = Math.round((port.image.length * 3) / 4 / 1024);
+              console.log(`📷 Portfolio ${index + 1} Base64 image size: ${imageSizeKB} KB`);
+            } else {
+              console.log(`📷 Portfolio ${index + 1} image URL: ${port.image.substring(0, 50)}...`);
+            }
           }
         });
 
-        await this.prisma.portfolio.createMany({
+        const createdPortfolios = await this.prisma.portfolio.createMany({
           data: portfolios.map((port: any) => ({
             title: port.title,
             description: port.description,
@@ -204,7 +305,26 @@ export class PortfolioController {
             pageContentId: pageContent.id, // For user-specific content
           })),
         });
+
+        // ดึงข้อมูลที่สร้างแล้วเพื่อแปลง image URL
+        const createdPortfolioList = await this.prisma.portfolio.findMany({
+          where: { pageContentId: pageContent.id },
+          orderBy: { createdAt: 'desc' },
+          take: portfolios.length,
+        });
+
+        // แปลง image URL เป็น proxy URLs
+        return {
+          success: true,
+          message: 'อัปเดตผลงานสำเร็จ',
+          portfolios: createdPortfolioList.map((p: any) => ({
+            ...p,
+            image: this.convertToProxyUrl(p.image),
+          })),
+        };
       }
+
+      return { success: true, message: 'อัปเดตผลงานสำเร็จ', portfolios: [] };
 
       // บันทึกประวัติการแก้ไข
       try {
@@ -222,7 +342,7 @@ export class PortfolioController {
         console.error('Error logging edit history:', historyError);
       }
 
-      return { success: true, message: 'อัปเดตผลงานสำเร็จ' };
+      // Return empty array if no portfolios (already handled above)
     } catch (error: any) {
       console.error('❌ Error updating portfolios:', error);
       

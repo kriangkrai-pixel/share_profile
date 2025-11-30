@@ -15,7 +15,7 @@
  * ฟีเจอร์:
  * - แสดงรายการผลงานทั้งหมด
  * - Modal สำหรับเพิ่ม/แก้ไข
- * - อัปโหลดรูปภาพแบบ Base64
+ * - อัปโหลดรูปภาพไปยัง S3 (เก็บเป็น URL/path แทน Base64)
  * - ลิงก์ไปหน้ารายละเอียด
  */
 
@@ -177,11 +177,12 @@ export default function PortfoliosPage() {
   };
 
   /**
-   * อัปโหลดรูปภาพ - Resize และ Compress อัตโนมัติ
+   * อัปโหลดรูปภาพ - Resize และ Compress อัตโนมัติ แล้วอัปโหลดไปยัง S3
    * - ขนาดสูงสุด: 1920x1920 px
    * - ขนาดไฟล์เป้าหมาย: 200 KB
+   * - เก็บเป็น URL/path แทน Base64 (เพื่อลดขนาด database)
    */
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -195,87 +196,154 @@ export default function PortfoliosPage() {
       return;
     }
 
+    if (!username) {
+      alert("❌ ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง");
+      return;
+    }
+
     setUploadingImage(true);
 
-    // สร้าง Image object เพื่อ resize
-    const img = new window.Image();
-    const reader = new window.FileReader();
+    try {
+      // สร้าง Image object เพื่อ resize และ compress
+      const img = new window.Image();
+      const reader = new window.FileReader();
 
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        img.src = e.target.result as string;
-      }
-    };
+      reader.onload = (e) => {
+        if (e.target?.result) {
+          img.src = e.target.result as string;
+        }
+      };
 
-    img.onload = () => {
-      // กำหนดขนาดสูงสุด
-      const MAX_WIDTH = 1920;
-      const MAX_HEIGHT = 1920;
-      const TARGET_FILE_SIZE = 200 * 1024; // 200 KB
+      img.onload = async () => {
+        try {
+          // กำหนดขนาดสูงสุด
+          const MAX_WIDTH = 1920;
+          const MAX_HEIGHT = 1920;
+          const TARGET_FILE_SIZE = 200 * 1024; // 200 KB
 
-      let width = img.width;
-      let height = img.height;
+          let width = img.width;
+          let height = img.height;
 
-      // คำนวณขนาดใหม่โดยรักษาสัดส่วน
-      if (width > MAX_WIDTH) {
-        height = (height * MAX_WIDTH) / width;
-        width = MAX_WIDTH;
-      }
+          // คำนวณขนาดใหม่โดยรักษาสัดส่วน
+          if (width > MAX_WIDTH) {
+            height = (height * MAX_WIDTH) / width;
+            width = MAX_WIDTH;
+          }
 
-      if (height > MAX_HEIGHT) {
-        width = (width * MAX_HEIGHT) / height;
-        height = MAX_HEIGHT;
-      }
+          if (height > MAX_HEIGHT) {
+            width = (width * MAX_HEIGHT) / height;
+            height = MAX_HEIGHT;
+          }
 
-      // สร้าง canvas เพื่อ resize
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
+          // สร้าง canvas เพื่อ resize
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
 
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        alert("ไม่สามารถประมวลผลรูปภาพได้");
-        setUploadingImage(false);
-        return;
-      }
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            alert("ไม่สามารถประมวลผลรูปภาพได้");
+            setUploadingImage(false);
+            return;
+          }
 
-      // วาดรูปลง canvas
-      ctx.drawImage(img, 0, 0, width, height);
+          // วาดรูปลง canvas
+          ctx.drawImage(img, 0, 0, width, height);
 
-      // ลอง compress จาก quality 0.9 ลงไป
-      let quality = 0.9;
-      let compressedBase64 = "";
+          // Compress รูปภาพ
+          let quality = 0.9;
+          let compressedBlob: Blob | null = null;
 
-      const compressImage = () => {
-        compressedBase64 = canvas.toDataURL("image/jpeg", quality);
-        
-        // คำนวณขนาดไฟล์โดยประมาณ (Base64)
-        const base64Length = compressedBase64.length - "data:image/jpeg;base64,".length;
-        const fileSize = (base64Length * 3) / 4;
+          const compressImage = (): Promise<Blob> => {
+            return new Promise((resolve) => {
+              canvas.toBlob(
+                (blob) => {
+                  if (!blob) {
+                    resolve(new Blob());
+                    return;
+                  }
 
-        // ถ้าขนาดยังใหญ่เกินไป ลด quality ลง
-        if (fileSize > TARGET_FILE_SIZE && quality > 0.1) {
-          quality -= 0.1;
-          compressImage();
-        } else {
-          // เสร็จแล้ว
-          const finalSize = (fileSize / 1024).toFixed(2);
+                  // ถ้าขนาดยังใหญ่เกินไป ลด quality ลง
+                  if (blob.size > TARGET_FILE_SIZE && quality > 0.1) {
+                    quality -= 0.1;
+                    compressImage().then(resolve);
+                  } else {
+                    resolve(blob);
+                  }
+                },
+                "image/jpeg",
+                quality
+              );
+            });
+          };
+
+          compressedBlob = await compressImage();
+          const finalSize = (compressedBlob.size / 1024).toFixed(2);
           console.log(`✅ รูปภาพ compressed: ${Math.round(width)}x${Math.round(height)}, ${finalSize} KB, quality: ${quality.toFixed(1)}`);
-          
-          setFormData({ ...formData, image: compressedBase64 });
+
+          // สร้าง FormData จาก compressed blob
+          const formData = new FormData();
+          formData.append("file", compressedBlob, file.name);
+          formData.append("owner", username);
+
+          // อัปโหลดไปยัง backend
+          const response = await apiRequest(API_ENDPOINTS.UPLOAD_PORTFOLIO, {
+            method: "POST",
+            body: formData,
+            username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
+          });
+
+          // ตรวจสอบ response และ parse JSON
+          let data;
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              data = await response.json();
+            } catch (jsonError) {
+              const text = await response.text();
+              throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+            }
+          } else {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          if (!response.ok) {
+            // แสดงข้อความ error จาก backend
+            const errorMessage = data?.message || data?.error || `HTTP ${response.status}: ${response.statusText}`;
+            throw new Error(errorMessage);
+          }
+
+          // Backend ส่งกลับมาเป็น proxy URL
+          const imageUrl = data.imageUrl || data.url;
+          if (imageUrl) {
+            // เก็บ URL แทน Base64
+            setFormData({ ...formData, image: imageUrl });
+            alert("✅ อัปโหลดรูปภาพสำเร็จ!");
+          } else {
+            throw new Error("ไม่ได้รับ URL รูปภาพ");
+          }
+        } catch (error: any) {
+          console.error("Error uploading image:", error);
+          // แสดงข้อความ error ที่ชัดเจน
+          const errorMessage = error.message || "เกิดข้อผิดพลาดในการอัปโหลด";
+          alert(`❌ ${errorMessage}`);
+        } finally {
           setUploadingImage(false);
         }
       };
 
-      compressImage();
-    };
+      img.onerror = () => {
+        alert("❌ ไม่สามารถอ่านไฟล์รูปภาพได้");
+        setUploadingImage(false);
+      };
 
-    img.onerror = () => {
-      alert("ไม่สามารถอ่านไฟล์รูปภาพได้");
+      reader.readAsDataURL(file);
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      alert(`❌ ${error.message || "เกิดข้อผิดพลาดในการอัปโหลด"}`);
       setUploadingImage(false);
-    };
-
-    reader.readAsDataURL(file);
+    }
   };
 
   /**

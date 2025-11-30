@@ -156,12 +156,17 @@ export default function Header() {
 
   const logoText = settings.headerLogoText || headerTheme.logoText || "PORTFOLIO.PRO";
 
+  // โลโก้: ใช้ scrollToSection เพื่อไปที่ hero section
+  const handleLogoClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    scrollToSection("/#hero", e);
+  };
+
   const logo = (
-    <Link
-      href="/"
-      onClick={closeMenu}
-      className="flex items-center gap-3 text-xl md:text-2xl font-bold hover:text-blue-600 transition-colors"
-      style={{ color: colors.text }}
+    <button
+      onClick={handleLogoClick}
+      className="flex items-center gap-3 text-xl md:text-2xl font-bold hover:text-blue-600 transition-colors cursor-pointer"
+      style={{ color: colors.text, background: "none", border: "none", padding: 0 }}
     >
       {headerTheme.logoImage ? (
         <Image
@@ -175,7 +180,7 @@ export default function Header() {
       ) : (
         <span aria-live="polite">{siteSettingsLoading ? "กำลังโหลด..." : logoText}</span>
       )}
-    </Link>
+    </button>
   );
 
   return (

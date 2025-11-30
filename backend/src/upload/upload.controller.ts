@@ -12,6 +12,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadService } from './upload.service';
 import { WidgetsService } from '../widgets/widgets.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('upload')
 export class UploadController {
@@ -19,6 +20,7 @@ export class UploadController {
     private readonly uploadService: UploadService,
     @Inject(forwardRef(() => WidgetsService))
     private readonly widgetsService: WidgetsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -36,17 +38,50 @@ export class UploadController {
   }
 
   /**
-   * POST /api/upload/portfolio
-   * อัปโหลดไฟล์รูป portfolio
+   * POST /api/upload/portfolio?portfolioId=123&owner=username
+   * อัปโหลดไฟล์รูป portfolio และบันทึก imageUrl ลง database (ถ้ามี portfolioId)
    */
   @Post('portfolio')
   @UseInterceptors(FileInterceptor('file'))
-  async uploadPortfolioFile(@UploadedFile() file: Express.Multer.File) {
+  async uploadPortfolioFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('portfolioId') portfolioId?: string,
+    @Query('owner') owner?: string,
+    @Body('portfolioId') bodyPortfolioId?: string,
+    @Body('owner') bodyOwner?: string,
+  ) {
     if (!file) {
       throw new BadRequestException('No file provided');
     }
-    console.log(`📤 Uploading portfolio file: ${file.originalname}`);
-    return this.uploadService.uploadFile(file, 'portfolio');
+
+    // รับ portfolioId และ owner จาก query parameter หรือ body
+    const id = portfolioId || bodyPortfolioId;
+    const portfolioIdNum = id ? parseInt(id, 10) : null;
+    const finalOwner = owner || bodyOwner;
+
+    console.log(`📤 Uploading portfolio file: ${file.originalname}${portfolioIdNum ? ` for portfolio ID: ${portfolioIdNum}` : ''}${finalOwner ? ` for owner: ${finalOwner}` : ''}`);
+
+    // อัปโหลดไปยัง S3
+    const uploadResult = await this.uploadService.uploadFile(file, 'portfolio', finalOwner);
+
+    // ถ้ามี portfolioId ให้บันทึก relativePath ลง database (ไม่ใช่ proxy URL)
+    if (portfolioIdNum) {
+      try {
+        await this.prisma.portfolio.update({
+          where: { id: portfolioIdNum },
+          data: { image: uploadResult.relativePath }, // บันทึก relative path (เช่น uploads/portfolio/image.jpg) แทน proxy URL
+        });
+        console.log(`✅ Updated portfolio ID ${portfolioIdNum} with relativePath: ${uploadResult.relativePath}`);
+      } catch (error) {
+        console.error(`❌ Error updating portfolio ID ${portfolioIdNum}:`, error);
+        // ไม่ throw error เพราะอัปโหลดสำเร็จแล้ว แค่บันทึกไม่สำเร็จ
+      }
+    }
+
+    return {
+      ...uploadResult,
+      portfolioId: portfolioIdNum,
+    };
   }
 
   /**
