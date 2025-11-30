@@ -258,8 +258,10 @@ export default function HeaderFooterPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // ตรวจสอบว่ามี token หรือไม่
-      const token = localStorage.getItem("adminToken");
+      // ใช้ getAuthToken เพื่อดึง token ที่ถูกต้องตาม username
+      const { getAuthToken } = require("@/lib/api-config");
+      const token = getAuthToken(urlUsername || username || undefined);
+      
       if (!token) {
         showMessage("error", "❌ กรุณาเข้าสู่ระบบก่อนบันทึก");
         setSaving(false);
@@ -372,6 +374,8 @@ export default function HeaderFooterPage() {
         } catch (error) {
           console.warn("⚠️ Failed to refresh settings context:", error);
         }
+        // Reload ข้อมูลในหน้านี้เพื่อให้ฟอร์มอัปเดต
+        await loadSettings();
       }
     } catch (error) {
       console.error("Error saving settings:", error);

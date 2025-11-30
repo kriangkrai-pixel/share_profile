@@ -128,8 +128,10 @@ export default function ThemeSettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // ตรวจสอบว่ามี token หรือไม่
-      const token = localStorage.getItem("adminToken");
+      // ใช้ getAuthToken เพื่อดึง token ที่ถูกต้องตาม username
+      const { getAuthToken } = require("@/lib/api-config");
+      const token = getAuthToken(urlUsername || username || undefined);
+      
       if (!token) {
         alert("❌ กรุณาเข้าสู่ระบบก่อนบันทึก");
         setSaving(false);

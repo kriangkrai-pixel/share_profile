@@ -95,8 +95,32 @@ export class ProfileService {
     // จะแปลงเป็น /uploads/portfolio/image.jpg
     let relativePath = imageUrl;
     
-    // ตรวจสอบว่าเป็น full URL หรือไม่
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+    // ตรวจสอบว่าเป็น localhost URL หรือไม่ (ข้อมูลเก่าจาก development)
+    if (imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1') || imageUrl.includes(':10000') || imageUrl.includes(':3001')) {
+      // Extract path จาก localhost URL
+      // เช่น http://localhost:10000/api/images/uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
+      const uploadsMatch = imageUrl.match(/\/uploads\/.*/);
+      if (uploadsMatch) {
+        relativePath = uploadsMatch[0];
+      } else {
+        // ถ้าไม่เจอ /uploads/ ให้ลอง extract จาก /api/images/
+        const apiImagesMatch = imageUrl.match(/\/api\/images\/(.+)/);
+        if (apiImagesMatch) {
+          relativePath = `/${apiImagesMatch[1]}`;
+        } else {
+          // Fallback: ใช้ pathname จาก URL
+          try {
+            const url = new URL(imageUrl);
+            relativePath = url.pathname;
+          } catch (e) {
+            const pathMatch = imageUrl.match(/\/[^?]*/);
+            if (pathMatch) {
+              relativePath = pathMatch[0];
+            }
+          }
+        }
+      }
+    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       // แยก path จาก URL
       try {
         const url = new URL(imageUrl);
