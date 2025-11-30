@@ -32,9 +32,12 @@ export class S3Service {
     
     if (apiBaseUrlEnv) {
       this.apiBaseUrl = apiBaseUrlEnv;
+      this.logger.log(`📡 API Base URL from environment: ${this.apiBaseUrl}`);
     } else {
       // สร้าง URL จาก PORT (สำหรับ development)
       this.apiBaseUrl = `http://localhost:${port}/api`;
+      this.logger.warn(`⚠️ API_BASE_URL not set, using default: ${this.apiBaseUrl}`);
+      this.logger.warn(`💡 Please set API_BASE_URL or NEXT_PUBLIC_API_URL environment variable for production`);
     }
 
     this.s3Client = new S3Client({
@@ -238,7 +241,10 @@ export class S3Service {
       baseUrl = baseUrl.slice(0, -5); // ลบ /api/
     }
     
-    return `${baseUrl}/api/images${path}`;
+    const proxyUrl = `${baseUrl}/api/images${path}`;
+    this.logger.debug(`🔗 Generated proxy URL: ${proxyUrl} (from path: ${relativePath})`);
+    
+    return proxyUrl;
   }
 
   /**

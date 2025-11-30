@@ -21,8 +21,8 @@ const nextConfig: NextConfig = {
       // รองรับ backend proxy endpoint (localhost สำหรับ development)
       { protocol: 'http', hostname: 'localhost', port: '3001', pathname: '/api/images/**' },
       { protocol: 'http', hostname: '127.0.0.1', port: '3001', pathname: '/api/images/**' },
-      // รองรับ backend บน Render หรือ production
-      { protocol: 'https', hostname: '*.onrender.com', pathname: '/api/images/**' },
+      // รองรับ backend บน Render - ระบุ hostname ที่ชัดเจน
+      { protocol: 'https', hostname: 'share-profile-2.onrender.com', pathname: '/api/images/**' },
     ],
   },
   
