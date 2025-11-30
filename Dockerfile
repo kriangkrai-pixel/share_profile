@@ -8,13 +8,15 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
-COPY prisma ./prisma/
+
+# Copy prisma directory if it exists (from backend)
+COPY backend/prisma ./prisma/
 
 # Install dependencies
 RUN npm ci
 
-# Generate Prisma Client
-RUN npx prisma generate
+# Generate Prisma Client (only if prisma schema exists)
+RUN if [ -f "./prisma/schema.prisma" ]; then npx prisma generate; else echo "Warning: Prisma schema not found, skipping generation"; fi
 
 # Rebuild the source code only when needed
 FROM base AS builder
