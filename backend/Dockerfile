@@ -14,15 +14,12 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Run migrations before build
-RUN npx prisma migrate deploy
-
 # Build application
 RUN npm run build
 
 # Expose port
 EXPOSE 3001
 
-# Start application
-CMD ["npm", "run", "start:prod"]
+# Start application (รัน migration ก่อน start - DATABASE_URL จะมีใน runtime)
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
 
