@@ -282,14 +282,14 @@ export default function PortfoliosPage() {
           console.log(`✅ รูปภาพ compressed: ${Math.round(width)}x${Math.round(height)}, ${finalSize} KB, quality: ${quality.toFixed(1)}`);
 
           // สร้าง FormData จาก compressed blob
-          const formData = new FormData();
-          formData.append("file", compressedBlob, file.name);
-          formData.append("owner", username);
+          const uploadFormData = new FormData();
+          uploadFormData.append("file", compressedBlob, file.name);
+          uploadFormData.append("owner", username);
 
           // อัปโหลดไปยัง backend
           const response = await apiRequest(API_ENDPOINTS.UPLOAD_PORTFOLIO, {
             method: "POST",
-            body: formData,
+            body: uploadFormData,
             username: username || undefined, // ส่ง username เพื่อใช้ token ที่ถูกต้อง
           });
 
@@ -318,7 +318,7 @@ export default function PortfoliosPage() {
           const imageUrl = data.imageUrl || data.url;
           if (imageUrl) {
             // เก็บ URL แทน Base64
-            setFormData({ ...formData, image: imageUrl });
+            setFormData((prevFormData) => ({ ...prevFormData, image: imageUrl }));
             alert("✅ อัปโหลดรูปภาพสำเร็จ!");
           } else {
             throw new Error("ไม่ได้รับ URL รูปภาพ");
