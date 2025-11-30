@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
+// ตรวจสอบว่า deploy บน Cloudflare Pages หรือไม่
+const isCloudflarePages = process.env.CF_PAGES === '1' || process.env.CF_PAGES_BRANCH;
+
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  // ใช้ 'export' สำหรับ Cloudflare Pages, 'standalone' สำหรับ Render/Node.js
+  output: isCloudflarePages ? 'export' : 'standalone',
+  trailingSlash: isCloudflarePages ? true : false,
   
   // Image Optimization
   images: {
@@ -16,6 +21,8 @@ const nextConfig: NextConfig = {
       // รองรับ backend proxy endpoint (localhost สำหรับ development)
       { protocol: 'http', hostname: 'localhost', port: '3001', pathname: '/api/images/**' },
       { protocol: 'http', hostname: '127.0.0.1', port: '3001', pathname: '/api/images/**' },
+      // รองรับ backend บน Render หรือ production
+      { protocol: 'https', hostname: '*.onrender.com', pathname: '/api/images/**' },
     ],
   },
   
