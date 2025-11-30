@@ -9,14 +9,24 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Copy prisma directory if it exists (from backend)
+# Copy backend package.json and prisma directory BEFORE npm install
+COPY backend/package.json ./backend/
+COPY backend/prisma ./backend/prisma/
+
+# Copy prisma directory to root level as well (for root dependencies if needed)
 COPY backend/prisma ./prisma/
+
+# Temporarily disable postinstall script in backend to avoid errors during npm ci
+RUN cd backend && npm pkg delete scripts.postinstall || true
 
 # Install dependencies
 RUN npm ci
 
-# Generate Prisma Client (only if prisma schema exists)
-RUN if [ -f "./prisma/schema.prisma" ]; then npx prisma generate; else echo "Warning: Prisma schema not found, skipping generation"; fi
+# Manually generate Prisma Client after install (for backend)
+RUN if [ -f "./backend/prisma/schema.prisma" ]; then cd backend && npx prisma generate; else echo "Warning: Backend Prisma schema not found, skipping generation"; fi
+
+# Generate Prisma Client for root if needed
+RUN if [ -f "./prisma/schema.prisma" ]; then npx prisma generate; else echo "Warning: Root Prisma schema not found, skipping generation"; fi
 
 # Rebuild the source code only when needed
 FROM base AS builder
