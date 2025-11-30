@@ -10,6 +10,88 @@ export class WidgetsService {
   ) {}
 
   /**
+   * Helper method: แปลง image URL/path เป็น relative path สำหรับเก็บใน database
+   * Handle ทั้งกรณีที่เป็น Base64, full URL, proxy URL, และ relative path
+   */
+  private convertToRelativePath(imageUrl: string | null | undefined): string | null | undefined {
+    if (!imageUrl) {
+      return imageUrl;
+    }
+
+    // ถ้าเป็น base64 (เริ่มต้นด้วย data:) ให้ return ตามเดิม (backward compatibility)
+    if (imageUrl.startsWith('data:')) {
+      return imageUrl;
+    }
+
+    // ถ้าเป็น relative path อยู่แล้ว (เริ่มต้นด้วย uploads/) ให้ return ตามเดิม
+    if (imageUrl.startsWith('uploads/')) {
+      return imageUrl;
+    }
+
+    // ถ้าเป็น relative path ที่มี leading slash (เช่น /uploads/...) ให้ลบ leading slash
+    if (imageUrl.startsWith('/uploads/')) {
+      return imageUrl.substring(1); // ลบ leading slash
+    }
+
+    // ถ้าเป็น full URL หรือ proxy URL ให้ extract path
+    let relativePath = imageUrl;
+    
+    // ตรวจสอบว่าเป็น proxy URL หรือ full URL
+    if (imageUrl.includes('/api/images/')) {
+      // Extract จาก proxy URL: /api/images/uploads/widget/image.jpg -> uploads/widget/image.jpg
+      const match = imageUrl.match(/\/api\/images\/(.+)/);
+      if (match && match[1]) {
+        relativePath = match[1];
+      }
+    } else if (imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1') || imageUrl.includes(':10000') || imageUrl.includes(':3001')) {
+      // Extract path จาก localhost URL
+      const uploadsMatch = imageUrl.match(/\/uploads\/(.+)/);
+      if (uploadsMatch) {
+        relativePath = uploadsMatch[1];
+      } else {
+        const apiImagesMatch = imageUrl.match(/\/api\/images\/(.+)/);
+        if (apiImagesMatch) {
+          relativePath = apiImagesMatch[1];
+        }
+      }
+    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      // Extract path จาก full URL
+      try {
+        const url = new URL(imageUrl);
+        const pathname = url.pathname;
+        // Extract uploads/... จาก pathname
+        const match = pathname.match(/\/uploads\/(.+)/);
+        if (match && match[1]) {
+          relativePath = match[1];
+        } else {
+          // ถ้าไม่มี /uploads/ ให้ใช้ pathname โดยลบ leading slash
+          relativePath = pathname.startsWith('/') ? pathname.substring(1) : pathname;
+        }
+      } catch (e) {
+        // ถ้า parse ไม่ได้ ให้ extract จาก string
+        const match = imageUrl.match(/\/uploads\/(.+)/);
+        if (match && match[1]) {
+          relativePath = match[1];
+        }
+      }
+    }
+
+    // Normalize: ตรวจสอบว่าเป็น relative path ที่ถูกต้อง
+    if (relativePath.startsWith('/')) {
+      relativePath = relativePath.substring(1);
+    }
+
+    // ตรวจสอบว่าเป็น relative path ที่ถูกต้อง (ต้องขึ้นต้นด้วย uploads/)
+    if (!relativePath.startsWith('uploads/')) {
+      console.warn(`⚠️ Invalid relative path extracted: ${relativePath} from ${imageUrl}`);
+      // ถ้าไม่ใช่ relative path ที่ถูกต้อง ให้ return ตามเดิม (อาจเป็น base64 หรือ path อื่น)
+      return imageUrl;
+    }
+
+    return relativePath;
+  }
+
+  /**
    * แปลง image URL/path เป็น proxy URL
    */
   private convertToProxyUrl(imageUrl: string | null | undefined): string | null | undefined {
@@ -136,13 +218,16 @@ export class WidgetsService {
       }
     }
 
+    // ✅ แปลง imageUrl เป็น relative path ก่อนบันทึกลง database
+    const imagePath = this.convertToRelativePath(imageUrl);
+
     const newWidget = await this.prisma.widget.create({
       data: {
         layoutId: layoutExists.id,
         type,
         title,
         content,
-        imageUrl,
+        imageUrl: imagePath,
         x: Number.isFinite(Number(x)) ? Number(x) : 0,
         y: Number.isFinite(Number(y)) ? Number(y) : 0,
         w: Number.isFinite(Number(w)) ? Number(w) : 6,
@@ -165,7 +250,12 @@ export class WidgetsService {
       throw new BadRequestException('id is required');
     }
 
-    const { id: _, settings, ...updateData } = data;
+    const { id: _, settings, imageUrl, ...updateData } = data;
+
+    // ✅ แปลง imageUrl เป็น relative path ก่อนบันทึกลง database (ถ้ามี)
+    if (imageUrl !== undefined) {
+      updateData.imageUrl = this.convertToRelativePath(imageUrl);
+    }
 
     // Validate and stringify settings if it's an object
     let settingsString = settings;
