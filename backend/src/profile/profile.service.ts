@@ -78,7 +78,7 @@ export class ProfileService {
 
   /**
    * แปลง image URL/path เป็น proxy URL
-   * Handle ทั้งกรณีที่เป็น full URL (ข้อมูลเก่า) และ relative path (ข้อมูลใหม่)
+   * Handle ทั้งกรณีที่เป็น full URL (ข้อมูลเก่าจาก domain อื่น) และ relative path
    */
   private convertToProxyUrl(imageUrl: string | null | undefined): string | undefined {
     if (!imageUrl) {
@@ -90,67 +90,66 @@ export class ProfileService {
       return imageUrl;
     }
 
+    // ถ้าเป็น relative path อยู่แล้ว (ไม่ใช่ full URL) ให้แปลงเป็น proxy URL โดยตรง
+    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+      // ถ้าเป็น relative path ที่ขึ้นต้นด้วย uploads/ ให้เพิ่ม / นำหน้า
+      let relativePath = imageUrl;
+      if (relativePath.startsWith('uploads/') && !relativePath.startsWith('/uploads/')) {
+        relativePath = `/${relativePath}`;
+      } else if (!relativePath.startsWith('/')) {
+        relativePath = `/${relativePath}`;
+      }
+      return this.s3Service.getProxyUrl(relativePath);
+    }
+
     // ถ้าเป็น full URL (ข้อมูลเก่า) ให้แปลงเป็น relative path ก่อน
-    // เช่น https://internship.sgp1.digitaloceanspaces.com/uploads/portfolio/image.jpg
-    // จะแปลงเป็น /uploads/portfolio/image.jpg
-    let relativePath = imageUrl;
+    let relativePath: string | null = null;
     
-    // ตรวจสอบว่าเป็น localhost URL หรือไม่ (ข้อมูลเก่าจาก development)
-    if (imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1') || imageUrl.includes(':10000') || imageUrl.includes(':3001')) {
-      // Extract path จาก localhost URL
-      // เช่น http://localhost:10000/api/images/uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
-      const uploadsMatch = imageUrl.match(/\/uploads\/.*/);
-      if (uploadsMatch) {
-        relativePath = uploadsMatch[0];
-      } else {
-        // ถ้าไม่เจอ /uploads/ ให้ลอง extract จาก /api/images/
-        const apiImagesMatch = imageUrl.match(/\/api\/images\/(.+)/);
-        if (apiImagesMatch) {
-          relativePath = `/${apiImagesMatch[1]}`;
-        } else {
-          // Fallback: ใช้ pathname จาก URL
-          try {
-            const url = new URL(imageUrl);
-            relativePath = url.pathname;
-          } catch (e) {
-            const pathMatch = imageUrl.match(/\/[^?]*/);
-            if (pathMatch) {
-              relativePath = pathMatch[0];
-            }
-          }
+    try {
+      const url = new URL(imageUrl);
+      const pathname = url.pathname;
+      
+      // ถ้า pathname มี /api/images/ ให้ extract ส่วนที่อยู่หลัง /api/images/
+      // เช่น /api/images/uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
+      if (pathname.includes('/api/images/')) {
+        const match = pathname.match(/\/api\/images\/(.+)/);
+        if (match && match[1]) {
+          relativePath = `/${match[1]}`;
         }
       }
-    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      // แยก path จาก URL
-      try {
-        const url = new URL(imageUrl);
-        relativePath = url.pathname;
-      } catch (e) {
-        // ถ้า parse ไม่ได้ ให้ extract path จาก URL string
-        const match = imageUrl.match(/\/uploads\/.*/);
-        if (match) {
-          relativePath = match[0];
-        } else {
-          // ถ้าไม่เจอ /uploads/ ให้ใช้ pathname จาก URL string
-          const pathMatch = imageUrl.match(/\/[^?]*/);
-          if (pathMatch) {
-            relativePath = pathMatch[0];
-          }
+      // ถ้า pathname มี /uploads/ ให้ใช้ส่วนนั้น
+      else if (pathname.includes('/uploads/')) {
+        relativePath = pathname;
+      }
+      // Fallback: ใช้ pathname ทั้งหมด
+      else {
+        relativePath = pathname || '/';
+      }
+    } catch (e) {
+      // ถ้า parse URL ไม่ได้ ให้ extract จาก string โดยตรง
+      // ลอง extract จาก /api/images/ ก่อน
+      const apiImagesMatch = imageUrl.match(/\/api\/images\/(.+?)(?:\?|$)/);
+      if (apiImagesMatch && apiImagesMatch[1]) {
+        relativePath = `/${apiImagesMatch[1]}`;
+      }
+      // ถ้าไม่เจอ ให้ลอง extract จาก /uploads/
+      else {
+        const uploadsMatch = imageUrl.match(/\/uploads\/.*?(?:\?|$)/);
+        if (uploadsMatch) {
+          relativePath = uploadsMatch[0];
         }
       }
     }
 
-    // ลบ /api/images prefix ถ้ามี (ป้องกันการซ้ำซ้อน)
-    // เช่น /api/images/uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
-    if (relativePath.startsWith('/api/images/')) {
-      relativePath = relativePath.replace(/^\/api\/images/, '');
-    } else if (relativePath.startsWith('/api/images')) {
-      relativePath = relativePath.replace(/^\/api\/images/, '');
+    // ถ้ายัง extract ไม่ได้ ให้ return undefined
+    if (!relativePath) {
+      console.warn(`⚠️ Could not extract path from URL: ${imageUrl}`);
+      return undefined;
     }
 
-    // Normalize path: ถ้า path ไม่ขึ้นต้นด้วย /uploads/ แต่มี uploads/ ให้เพิ่ม /
-    // เช่น uploads/portfolio/image.jpg -> /uploads/portfolio/image.jpg
-    if (relativePath.startsWith('uploads/') && !relativePath.startsWith('/uploads/')) {
+    // Normalize path: ตรวจสอบว่าเป็น relative path ที่ถูกต้อง
+    // ถ้าไม่ขึ้นต้นด้วย / ให้เพิ่ม
+    if (!relativePath.startsWith('/')) {
       relativePath = `/${relativePath}`;
     }
 
