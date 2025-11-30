@@ -172,6 +172,7 @@ model Layout {
 
   @@index([userId])
   @@index([isActive])
+  @@index([userId, isActive]) // Composite index สำหรับ query ที่ใช้ทั้ง userId และ isActive
 }
 
 model Widget {
@@ -194,15 +195,16 @@ model Widget {
 
   @@index([layoutId])
   @@index([order])
+  @@index([layoutId, order]) // Composite index สำหรับ query ที่ใช้ทั้ง layoutId และ order
 }
 
 model ContactMessage {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String
-  message   String   @db.Text
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  name        String
+  email       String
+  message     String   @db.Text
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
   recipientId Int?
   recipient   User?    @relation(fields: [recipientId], references: [id], onDelete: SetNull)
 
@@ -228,17 +230,17 @@ model SiteSettings {
   headerMenuItems String? @db.Text // JSON array ของ menu items
 
   // Footer Settings
-  footerLogoText    String  @default("logo") // ข้อความโลโก้ Footer
-  footerDescription String? @db.Text // คำอธิบายใน Footer
-  footerEmail       String  @default("email") // อีเมลใน Footer
-  footerLocation    String  @default("location") // ที่อยู่ใน Footer
+  footerLogoText     String  @default("logo") // ข้อความโลโก้ Footer
+  footerDescription  String? @db.Text // คำอธิบายใน Footer
+  footerEmail        String  @default("email") // อีเมลใน Footer
+  footerLocation     String  @default("location") // ที่อยู่ใน Footer
   footerShowLocation Boolean @default(true)
   footerShowEmail    Boolean @default(true)
   footerShowPhone    Boolean @default(true)
-  footerLinks       String? @db.Text // JSON array ของ links ใน Footer
+  footerLinks        String? @db.Text // JSON array ของ links ใน Footer
 
-  userId   Int?   @unique
-  user     User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int?  @unique
+  user   User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   updatedAt DateTime @updatedAt
 }

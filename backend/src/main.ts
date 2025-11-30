@@ -2,11 +2,24 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { json, urlencoded } from 'express';
+import compression from 'compression';
 
 let appInstance: any = null;
 
 async function createApp() {
   const app = await NestFactory.create(AppModule);
+
+  // ✅ เพิ่ม compression middleware เพื่อลดขนาด response
+  app.use(compression({
+    filter: (req, res) => {
+      // Compress ทุก response ยกเว้น images (เพราะ images มี compression อยู่แล้ว)
+      if (req.headers['accept']?.includes('image/')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+    level: 6, // ระดับ compression (1-9, 6 = balance ระหว่าง speed และ size)
+  }));
 
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
@@ -33,10 +46,12 @@ async function createApp() {
     /^https:\/\/.*\.onrender\.com$/,
   ];
 
-  // Log CORS configuration for debugging
-  console.log('🔒 CORS Configuration:');
-  console.log('  - FRONTEND_URL:', process.env.FRONTEND_URL || 'not set');
-  console.log('  - Allowed origins:', allowedOrigins);
+  // Log CORS configuration for debugging (เฉพาะ development)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔒 CORS Configuration:');
+    console.log('  - FRONTEND_URL:', process.env.FRONTEND_URL || 'not set');
+    console.log('  - Allowed origins:', allowedOrigins);
+  }
 
   app.enableCors({
     origin: (origin, callback) => {

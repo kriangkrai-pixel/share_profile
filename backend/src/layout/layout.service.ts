@@ -309,30 +309,32 @@ export class LayoutService {
       },
     });
 
-    // อัปเดต widgets ถ้ามี
+    // อัปเดต widgets ถ้ามี - ใช้ Promise.all เพื่อลด N+1 query problem
     if (widgets && Array.isArray(widgets)) {
-      for (const widget of widgets) {
-        if (widget.id) {
-          // ✅ แปลง imageUrl เป็น relative path ก่อนบันทึกลง database
-          const imagePath = this.convertToRelativePath(widget.imageUrl);
-          
-          await this.prisma.widget.update({
-            where: { id: widget.id },
-            data: {
-              x: widget.x,
-              y: widget.y,
-              w: widget.w,
-              h: widget.h,
-              order: widget.order,
-              isVisible: widget.isVisible,
-              title: widget.title,
-              content: widget.content,
-              imageUrl: imagePath,
-              settings: widget.settings,
-            },
-          });
-        }
-      }
+      await Promise.all(
+        widgets
+          .filter((widget) => widget.id) // กรองเฉพาะ widgets ที่มี id
+          .map((widget) => {
+            // ✅ แปลง imageUrl เป็น relative path ก่อนบันทึกลง database
+            const imagePath = this.convertToRelativePath(widget.imageUrl);
+            
+            return this.prisma.widget.update({
+              where: { id: widget.id },
+              data: {
+                x: widget.x,
+                y: widget.y,
+                w: widget.w,
+                h: widget.h,
+                order: widget.order,
+                isVisible: widget.isVisible,
+                title: widget.title,
+                content: widget.content,
+                imageUrl: imagePath,
+                settings: widget.settings,
+              },
+            });
+          }),
+      );
     }
 
     // ดึงข้อมูลที่อัปเดตแล้ว

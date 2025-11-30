@@ -18,7 +18,10 @@ export class LayoutController {
     @Query('username') username?: string,
   ) {
     const includeHiddenBool = includeHidden === 'true';
-    console.log(`📋 Fetching layout for user: ${username || 'default'} (includeHidden: ${includeHiddenBool})`);
+    // ✅ ลด logging ใน production
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`📋 Fetching layout for user: ${username || 'default'} (includeHidden: ${includeHiddenBool})`);
+    }
     return this.layoutService.getActiveLayout(includeHiddenBool, username);
   }
 
@@ -31,7 +34,9 @@ export class LayoutController {
   @UseGuards(JwtAuthGuard)
   async createLayout(@Request() req: any, @Body() data: { name?: string }) {
     const userId = req.user?.userId;
-    console.log(`➕ Creating new layout: ${data.name || 'Unnamed'} for user: ${userId || 'unknown'}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`➕ Creating new layout: ${data.name || 'Unnamed'} for user: ${userId || 'unknown'}`);
+    }
     return this.layoutService.createLayout(data.name, userId);
   }
 
@@ -43,7 +48,9 @@ export class LayoutController {
   @Put()
   @UseGuards(JwtAuthGuard)
   async updateLayout(@Body() data: any) {
-    console.log(`✏️ Updating layout ID: ${data.id}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✏️ Updating layout ID: ${data.id}`);
+    }
     return this.layoutService.updateLayout(data.id, data);
   }
 }

@@ -21,10 +21,14 @@ export class ProfileController {
     const userId = req.user?.userId;
     
     if (userId) {
-      console.log(`📋 Fetching complete profile data for user: ${req.user.username}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📋 Fetching complete profile data for user: ${req.user.username}`);
+      }
       return this.profileService.getProfile(userId);
     } else {
-      console.log('📋 Fetching profile data (public access - no user specified)');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📋 Fetching profile data (public access - no user specified)');
+      }
       return this.profileService.getProfileLegacy();
     }
   }
@@ -37,7 +41,9 @@ export class ProfileController {
   @Put()
   @UseGuards(JwtAuthGuard)
   async updateProfile(@Request() req: any, @Body() data: UpdateProfileDto) {
-    console.log(`✏️ Updating profile data for user: ${req.user.username}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✏️ Updating profile data for user: ${req.user.username}`);
+    }
     // IMPORTANT: ใช้ userId จาก JWT token เท่านั้น ไม่อ่านจาก request body
     // Validation จะทำงานอัตโนมัติผ่าน ValidationPipe และ UpdateProfileDto
     return this.profileService.updateProfile(req.user.userId, data);

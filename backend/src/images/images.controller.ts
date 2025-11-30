@@ -39,11 +39,14 @@ export class ImagesController {
       }
     }
     
-    console.log(`🖼️ Fetching image via proxy: ${path}`);
-    console.log(`🔍 Request URL: ${req.url}`);
-    console.log(`🔍 Request path: ${req.path}`);
-    console.log(`🔍 Request params:`, req.params);
-    console.log(`🔍 Extracted path: ${path}`);
+    // ✅ ลด logging ใน production เพื่อเพิ่มประสิทธิภาพ
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🖼️ Fetching image via proxy: ${path}`);
+      console.log(`🔍 Request URL: ${req.url}`);
+      console.log(`🔍 Request path: ${req.path}`);
+      console.log(`🔍 Request params:`, req.params);
+      console.log(`🔍 Extracted path: ${path}`);
+    }
     
     if (!path || path === '/') {
       throw new NotFoundException('Image path is required');
@@ -54,13 +57,26 @@ export class ImagesController {
       // Path ควรเป็น "/uploads/portfolio/..." เพื่อให้ตรงกับ S3 key format
       const normalizedPath = path.startsWith('/') ? path : `/${path}`;
       
-      console.log(`🔍 Normalized path for S3: ${normalizedPath}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🔍 Normalized path for S3: ${normalizedPath}`);
+      }
       
       const { body, contentType } = await this.imagesService.getImage(normalizedPath);
 
+      // ✅ เพิ่ม ETag สำหรับ cache validation
+      const crypto = require('crypto');
+      const etag = crypto.createHash('md5').update(body).digest('hex');
+
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('ETag', `"${etag}"`);
       res.setHeader('Content-Length', body.length.toString());
+
+      // ✅ ตรวจสอบ If-None-Match header สำหรับ conditional requests
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch === `"${etag}"`) {
+        return res.status(304).end(); // Not Modified
+      }
 
       res.send(body);
     } catch (error: any) {
