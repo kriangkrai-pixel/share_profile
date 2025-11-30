@@ -5,15 +5,14 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Copy prisma directory BEFORE npm install (needed for postinstall script)
+COPY prisma ./prisma/
+
+# Install dependencies (postinstall will run prisma generate)
 RUN npm install
 
-# Copy source code (includes prisma directory if it exists in build context)
+# Copy source code
 COPY . .
-
-# Generate Prisma Client (only if prisma schema exists)
-# This step will fail gracefully if prisma directory doesn't exist
-RUN if [ -f "./prisma/schema.prisma" ]; then npx prisma generate; else echo "Warning: Prisma schema not found at ./prisma/schema.prisma"; fi
 
 # Build application
 RUN npm run build
