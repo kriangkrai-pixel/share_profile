@@ -14,6 +14,9 @@ RUN npm install
 # Copy source code
 COPY . .
 
+# Run migrations before build
+RUN npx prisma migrate deploy
+
 # Build application
 RUN npm run build
 
